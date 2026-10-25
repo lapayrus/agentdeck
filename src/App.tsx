@@ -5,6 +5,7 @@ import ActionDialog from "./components/ActionDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import TrashPanel from "./components/TrashPanel";
 import { createFakeClient, tauriClient, type CommandClient } from "./api";
+import { checkForUpdate, installUpdate, isTauriRuntime } from "./updater";
 import type {
   ActionPlan,
   AppSettings,
@@ -76,6 +77,7 @@ export default function App({
   const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
   const [trashBusyId, setTrashBusyId] = useState<string | null>(null);
   const [trashError, setTrashError] = useState<string | null>(null);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +104,19 @@ export default function App({
     query.addEventListener("change", listener);
     return () => query.removeEventListener("change", listener);
   }, [settings?.theme]);
+
+  useEffect(() => {
+    if (!settings?.checkForUpdates || !isTauriRuntime()) return;
+    let cancelled = false;
+    checkForUpdate()
+      .then((update) => {
+        if (!cancelled && update) setUpdateVersion(update.version);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [settings?.checkForUpdates]);
 
   const chooseProject = async () => {
     try {
@@ -336,6 +351,16 @@ export default function App({
             <button className="button button-quiet" onClick={openTrash}>
               Trash
             </button>
+            {updateVersion ? (
+              <button
+                className="button button-primary"
+                onClick={() => {
+                  installUpdate().catch(() => {});
+                }}
+              >
+                Update {updateVersion}
+              </button>
+            ) : null}
           </div>
         </header>
 

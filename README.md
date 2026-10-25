@@ -38,6 +38,19 @@ cargo check -p agentdeck
 - `docs/research/agent-config-manager.md` — the configuration surface of each ecosystem
 - `.scratch/agentdeck-v1/spec.md` — the V1 spec and tickets
 
+## Releases and updates
+
+Releases are built by `.github/workflows/release.yml` on a `v*` tag. The workflow produces an MSI, an NSIS installer and signed updater artifacts for a draft GitHub Release.
+
+Two repository secrets are required:
+
+- `TAURI_SIGNING_PRIVATE_KEY` — the contents of the minisign private key
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password, if one was set
+
+The updater public key lives in `src-tauri/tauri.conf.json`. The private key must never be committed. Before publishing a release, replace `OWNER` in the updater endpoint with the GitHub owner and repository name.
+
+The app checks for updates at launch (throttled by the updater plugin) and on demand from Settings. The check is a signed request to GitHub Releases and is the only network call the app makes; it can be disabled.
+
 ## License
 
 MIT

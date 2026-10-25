@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +39,14 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2NzcwNzAxQjUxOUQzRDQKUldUVTB4bTFBUWQzbGkxOC9wMEthalArTlJValgyWEplVWg3dFd4OVQ0eFUyWlN1NkZ6MHhvbXoK",
+      "endpoints": [
+        "https://github.com/OWNER/AgentDeck/releases/latest/download/latest.json"
+      ]
     }
   }
 }

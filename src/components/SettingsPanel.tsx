@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AppSettings, Ecosystem } from "../types";
+import { checkForUpdate, installUpdate } from "../updater";
 
 const ECOSYSTEM_LABELS: { id: Ecosystem; label: string }[] = [
   { id: "claude", label: "Claude Code" },
@@ -20,6 +21,41 @@ export default function SettingsPanel({
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [available, setAvailable] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const checkNow = async () => {
+    setChecking(true);
+    setUpdateStatus(null);
+    setAvailable(null);
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        setAvailable(update.version);
+        setUpdateStatus(`Version ${update.version} is available.`);
+      } else {
+        setUpdateStatus("AgentDeck is up to date.");
+      }
+    } catch (cause) {
+      setUpdateStatus(String(cause));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const installNow = async () => {
+    setChecking(true);
+    setUpdateStatus("Downloading and verifying the update…");
+    try {
+      const installed = await installUpdate();
+      if (!installed) setUpdateStatus("No update was available after all.");
+    } catch (cause) {
+      setUpdateStatus(String(cause));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const update = (next: AppSettings) => {
     setDraft(next);
@@ -91,6 +127,19 @@ export default function SettingsPanel({
           <p className="settings-hint">
             The update check is the only network request AgentDeck makes.
           </p>
+          <div className="update-row">
+            <button className="button" onClick={checkNow} disabled={checking}>
+              {checking ? "Checking…" : "Check for updates"}
+            </button>
+            {available ? (
+              <button className="button button-primary" onClick={installNow}>
+                Install {available} and restart
+              </button>
+            ) : null}
+          </div>
+          {updateStatus ? (
+            <p className="settings-hint">{updateStatus}</p>
+          ) : null}
         </section>
 
         <section className="settings-section">

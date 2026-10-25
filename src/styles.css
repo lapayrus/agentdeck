@@ -795,3 +795,10 @@ button {
   font-size: 11px;
   white-space: pre-wrap;
 }
+
+.update-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
