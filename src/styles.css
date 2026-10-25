@@ -658,3 +658,140 @@ button {
   color: var(--text-muted);
   margin-top: 6px;
 }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.button-primary:disabled {
+  opacity: 0.45;
+}
+
+.button-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+}
+
+.button-danger:hover {
+  background: var(--accent-soft);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.plan-files li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 9px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.plan-description {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trash-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.trash-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.trash-list li[data-restored="true"] {
+  opacity: 0.6;
+}
+
+.trash-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.trash-name {
+  font-weight: 600;
+}
+
+.history-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.history-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.modal-wide {
+  width: min(900px, calc(100vw - 48px));
+}
+
+.diff {
+  margin-top: 12px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}

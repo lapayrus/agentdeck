@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use agentdeck_core::actions::{
+    ActionPlan, ActionResult, HistoryEntry, SnapshotDiff, TrashEntry,
+};
 use agentdeck_core::model::{Ecosystem, ScanRequest, ScanResult};
 use agentdeck_core::roots::{resolve_project_root, Roots};
 use agentdeck_core::state::{AppSettings, Store};
@@ -179,4 +182,106 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+}
+
+fn manager_for(state: &AppState) -> Manager {
+    build_manager(state, state.project_snapshot())
+}
+
+#[tauri::command]
+pub fn plan_toggle(
+    artifact_id: String,
+    enabled: bool,
+    state: State<AppState>,
+) -> Result<ActionPlan, String> {
+    manager_for(&state).plan_toggle(&artifact_id, enabled)
+}
+
+#[tauri::command]
+pub fn plan_remove(artifact_id: String, state: State<AppState>) -> Result<ActionPlan, String> {
+    manager_for(&state).plan_remove(&artifact_id)
+}
+
+#[tauri::command]
+pub fn apply_plan(plan: ActionPlan, state: State<AppState>) -> Result<ActionResult, String> {
+    let manager = manager_for(&state);
+    let scan = manager.apply_plan(&plan)?;
+    Ok(ActionResult { plan, scan })
+}
+
+#[tauri::command]
+pub fn restore(trash_id: String, state: State<AppState>) -> Result<ActionResult, String> {
+    let manager = manager_for(&state);
+    let entries = manager.list_trash();
+    let entry = entries
+        .iter()
+        .find(|entry| entry.id == trash_id)
+        .ok_or_else(|| "That trash entry no longer exists.".to_string())?;
+    let plan = ActionPlan {
+        action: agentdeck_core::actions::ActionKind::Remove,
+        artifact_id: entry.artifact_id.clone(),
+        artifact_name: entry.artifact_name.clone(),
+        summary: format!("Restore \"{}\" from the trash.", entry.artifact_name),
+        affected_ecosystems: vec![entry.ecosystem],
+        files: vec![agentdeck_core::actions::PlanFile {
+            path: entry.origin_path.clone(),
+            operation: "move".into(),
+            description: "Move the artifact back to its original path".into(),
+        }],
+        warnings: Vec::new(),
+    };
+    let scan = manager.restore(&trash_id)?;
+    Ok(ActionResult { plan, scan })
+}
+
+#[tauri::command]
+pub fn list_trash(state: State<AppState>) -> Vec<TrashEntry> {
+    manager_for(&state).list_trash()
+}
+
+#[tauri::command]
+pub fn list_history(path: Option<String>, state: State<AppState>) -> Vec<HistoryEntry> {
+    manager_for(&state).list_history(path.as_deref())
+}
+
+#[tauri::command]
+pub fn read_snapshot(snapshot_path: String, state: State<AppState>) -> Result<String, String> {
+    manager_for(&state).read_snapshot(&snapshot_path)
+}
+
+#[tauri::command]
+pub fn diff_snapshot(
+    snapshot_path: String,
+    state: State<AppState>,
+) -> Result<SnapshotDiff, String> {
+    manager_for(&state).diff_snapshot(&snapshot_path)
+}
+
+#[tauri::command]
+pub fn rollback(snapshot_path: String, state: State<AppState>) -> Result<ActionResult, String> {
+    let manager = manager_for(&state);
+    let scan = manager.rollback(&snapshot_path)?;
+    let plan = ActionPlan {
+        action: agentdeck_core::actions::ActionKind::Enable,
+        artifact_id: String::new(),
+        artifact_name: "Rollback".into(),
+        summary: "Roll the file back to a snapshot.".into(),
+        affected_ecosystems: Vec::new(),
+        files: Vec::new(),
+        warnings: Vec::new(),
+    };
+    Ok(ActionResult { plan, scan })
+}
+
+#[tauri::command]
+pub fn prune_snapshots(ids: Vec<String>, state: State<AppState>) -> Result<usize, String> {
+    manager_for(&state).prune_snapshots(&ids)
+}
+
+#[tauri::command]
+pub fn history_for_artifact(
+    artifact_id: String,
+    state: State<AppState>,
+) -> Vec<HistoryEntry> {
+    manager_for(&state).history_for_artifact(&artifact_id)
 }

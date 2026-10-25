@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import ActionDialog from "./components/ActionDialog";
 import SettingsPanel from "./components/SettingsPanel";
+import TrashPanel from "./components/TrashPanel";
 import { createFakeClient, tauriClient, type CommandClient } from "./api";
 import type {
+  ActionPlan,
   AppSettings,
   Artifact,
   ArtifactType,
   Ecosystem,
   EcosystemDetection,
+  HistoryEntry,
   ScanResult,
   Scope,
+  SnapshotDiff,
+  TrashEntry,
 } from "./types";
 
 const ECOSYSTEMS: { id: Ecosystem; label: string }[] = [
@@ -62,6 +68,13 @@ export default function App({
     null,
   );
   const [activeEcosystem, setActiveEcosystem] = useState<Ecosystem | null>(null);
+  const [plan, setPlan] = useState<ActionPlan | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
+  const [trashBusyId, setTrashBusyId] = useState<string | null>(null);
+  const [trashError, setTrashError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +144,54 @@ export default function App({
   const saveSettings = async (next: AppSettings) => {
     const saved = await client.saveSettings(next);
     setSettings(saved);
+  };
+
+  const applyScan = (result: ScanResult) => {
+    setScan(result);
+    setSelectedId((current) =>
+      result.artifacts.some((artifact) => artifact.id === current)
+        ? current
+        : null,
+    );
+  };
+
+  const openTrash = async () => {
+    setTrashOpen(true);
+    setTrashError(null);
+    try {
+      setTrashEntries(await client.listTrash());
+    } catch (cause) {
+      setTrashError(String(cause));
+    }
+  };
+
+  const restoreEntry = async (id: string) => {
+    setTrashBusyId(id);
+    setTrashError(null);
+    try {
+      const result = await client.restore(id);
+      applyScan(result.scan);
+      setTrashEntries(await client.listTrash());
+    } catch (cause) {
+      setTrashError(String(cause));
+    } finally {
+      setTrashBusyId(null);
+    }
+  };
+
+  const confirmPlan = async () => {
+    if (!plan) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const result = await client.applyPlan(plan);
+      applyScan(result.scan);
+      setPlan(null);
+    } catch (cause) {
+      setActionError(String(cause));
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   const artifacts = scan?.artifacts ?? [];
@@ -253,6 +314,9 @@ export default function App({
             >
               Settings
             </button>
+            <button className="button button-quiet" onClick={openTrash}>
+              Trash
+            </button>
           </div>
         </header>
 
@@ -349,6 +413,11 @@ export default function App({
                 detection={scan?.detections.find(
                   (entry) => entry.ecosystem === selected.ecosystem,
                 )}
+                onPlan={(next) => {
+                  setActionError(null);
+                  setPlan(next);
+                }}
+                onScan={applyScan}
               />
             ) : (
               <div className="empty">
@@ -369,6 +438,28 @@ export default function App({
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
+
+      {plan ? (
+        <ActionDialog
+          plan={plan}
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={confirmPlan}
+          onCancel={() => {
+            if (!actionBusy) setPlan(null);
+          }}
+        />
+      ) : null}
+
+      {trashOpen ? (
+        <TrashPanel
+          entries={trashEntries}
+          busyId={trashBusyId}
+          error={trashError}
+          onRestore={restoreEntry}
+          onClose={() => setTrashOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -377,19 +468,52 @@ function ArtifactDetail({
   artifact,
   client,
   detection,
+  onPlan,
+  onScan,
 }: {
   artifact: Artifact;
   client: CommandClient;
   detection?: EcosystemDetection;
+  onPlan: (plan: ActionPlan) => void;
+  onScan: (scan: ScanResult) => void;
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const [raw, setRaw] = useState<Record<string, string>>({});
   const [rawError, setRawError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [diff, setDiff] = useState<SnapshotDiff | null>(null);
+
+  const isDisabled = artifact.enabled === false;
+  const capability =
+    artifact.artifactType === "agent"
+      ? "disable-agent"
+      : artifact.artifactType === "skill"
+        ? "disable-skill"
+        : "disable-mcp";
+  const quarantineAvailable = artifact.ecosystems.some(
+    (ecosystem) => ecosystem === "codex" || ecosystem === "commandcode",
+  );
+  const gated = Boolean(
+    artifact.managed &&
+      detection?.detected &&
+      detection.capabilities.length > 0 &&
+      !detection.capabilities.includes(capability) &&
+      !(quarantineAvailable && detection.capabilities.includes("disable-quarantine")),
+  );
 
   useEffect(() => {
     setShowRaw(false);
     setRaw({});
     setRawError(null);
+    setActionError(null);
+    setHistoryOpen(false);
+    setHistory(null);
+    setHistoryError(null);
+    setDiff(null);
   }, [artifact.id]);
 
   useEffect(() => {
@@ -411,6 +535,73 @@ function ArtifactDetail({
       cancelled = true;
     };
   }, [artifact.id, artifact.sourcePaths, client, showRaw]);
+
+  const requestToggle = async () => {
+    setActionError(null);
+    try {
+      onPlan(await client.planToggle(artifact.id, isDisabled));
+    } catch (cause) {
+      setActionError(String(cause));
+    }
+  };
+
+  const requestRemove = async () => {
+    setActionError(null);
+    try {
+      onPlan(await client.planRemove(artifact.id));
+    } catch (cause) {
+      setActionError(String(cause));
+    }
+  };
+
+  const loadHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryBusy(true);
+    setHistoryError(null);
+    try {
+      setHistory(await client.listHistory(artifact.primaryPath));
+    } catch (cause) {
+      setHistoryError(String(cause));
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const rollbackEntry = async (snapshotPath: string) => {
+    setHistoryBusy(true);
+    setHistoryError(null);
+    try {
+      const result = await client.rollback(snapshotPath);
+      onScan(result.scan);
+      setHistory(await client.listHistory(artifact.primaryPath));
+    } catch (cause) {
+      setHistoryError(String(cause));
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const pruneEntry = async (id: string) => {
+    setHistoryBusy(true);
+    setHistoryError(null);
+    try {
+      await client.pruneSnapshots([id]);
+      setHistory(await client.listHistory(artifact.primaryPath));
+    } catch (cause) {
+      setHistoryError(String(cause));
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const showDiff = async (snapshotPath: string) => {
+    setHistoryError(null);
+    try {
+      setDiff(await client.diffSnapshot(snapshotPath));
+    } catch (cause) {
+      setHistoryError(String(cause));
+    }
+  };
 
   return (
     <div className="detail-body">
@@ -457,6 +648,29 @@ function ArtifactDetail({
         </p>
       ))}
 
+      {artifact.managed ? (
+        <section className="actions">
+          <button
+            className="button button-primary"
+            onClick={requestToggle}
+            disabled={gated}
+            title={
+              gated
+                ? "The installed version does not advertise this action."
+                : undefined
+            }
+          >
+            {isDisabled ? "Enable" : "Disable"}
+          </button>
+          <button className="button button-danger" onClick={requestRemove}>
+            Remove
+          </button>
+        </section>
+      ) : (
+        <p className="settings-hint">Read-only in AgentDeck.</p>
+      )}
+      {actionError ? <div className="error">{actionError}</div> : null}
+
       {artifact.shadowed.length > 0 ? (
         <section className="shadowed">
           <h3>Shadowed definitions</h3>
@@ -489,6 +703,74 @@ function ArtifactDetail({
             ))
           : null}
       </section>
+
+      <section className="raw">
+        <div className="raw-header">
+          <h3>History</h3>
+          <button className="button button-quiet" onClick={loadHistory}>
+            {historyOpen ? "Refresh" : "Show history"}
+          </button>
+        </div>
+        {historyError ? <p className="error">{historyError}</p> : null}
+        {historyBusy ? <p className="settings-hint">Working…</p> : null}
+        {historyOpen && history && history.length === 0 ? (
+          <p className="settings-hint">No snapshots for this file yet.</p>
+        ) : null}
+        {historyOpen && history ? (
+          <ul className="history-list">
+            {history.map((entry) => (
+              <li key={entry.id}>
+                <div className="history-meta">
+                  <span className="badge">{entry.action}</span>
+                  <span className="settings-hint">{entry.timestamp}</span>
+                </div>
+                <div className="history-actions">
+                  <button
+                    className="button button-quiet"
+                    onClick={() => showDiff(entry.snapshotPath)}
+                  >
+                    Diff
+                  </button>
+                  <button
+                    className="button button-quiet"
+                    onClick={() => rollbackEntry(entry.snapshotPath)}
+                    disabled={historyBusy}
+                  >
+                    Roll back
+                  </button>
+                  <button
+                    className="button button-quiet"
+                    onClick={() => pruneEntry(entry.id)}
+                    disabled={historyBusy}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      {diff ? (
+        <div className="modal-backdrop" onClick={() => setDiff(null)}>
+          <div
+            className="modal modal-wide"
+            role="dialog"
+            aria-label="Snapshot diff"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="modal-header">
+              <h2>Snapshot diff</h2>
+              <button className="button button-quiet" onClick={() => setDiff(null)}>
+                Close
+              </button>
+            </header>
+            <p className="detail-path">{diff.path}</p>
+            <pre className="diff">{diff.diff || "No differences."}</pre>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

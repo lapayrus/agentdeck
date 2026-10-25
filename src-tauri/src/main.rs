@@ -75,7 +75,18 @@ fn main() {
             commands::set_project,
             commands::get_settings,
             commands::save_settings,
-            commands::read_file
+            commands::read_file,
+            commands::plan_toggle,
+            commands::plan_remove,
+            commands::apply_plan,
+            commands::restore,
+            commands::list_trash,
+            commands::list_history,
+            commands::read_snapshot,
+            commands::diff_snapshot,
+            commands::rollback,
+            commands::prune_snapshots,
+            commands::history_for_artifact
         ])
         .run(tauri::generate_context!())
         .expect("error while running AgentDeck");

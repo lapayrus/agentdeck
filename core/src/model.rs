@@ -104,6 +104,8 @@ pub struct Artifact {
     pub url: Option<String>,
     pub key_path: Option<String>,
     pub reload: ReloadHint,
+    #[serde(skip)]
+    pub content_hash: Option<String>,
 }
 
 impl Artifact {
@@ -145,6 +147,7 @@ impl Artifact {
             url: None,
             key_path: None,
             reload: ReloadHint::Unknown,
+            content_hash: None,
         }
     }
 }

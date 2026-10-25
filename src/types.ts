@@ -102,10 +102,12 @@ export interface HistoryEntry {
   ecosystem: Ecosystem | null;
   artifactName: string | null;
   snapshotPath: string;
+  hash: string;
 }
 
 export interface TrashEntry {
   id: string;
+  artifactId: string;
   artifactName: string;
   artifactType: ArtifactType;
   ecosystem: Ecosystem;
@@ -115,6 +117,8 @@ export interface TrashEntry {
   timestamp: string;
   kind: "file" | "quarantine" | "configKey";
   restored: boolean;
+  snapshotPath: string | null;
+  afterHash: string | null;
 }
 
 export interface AppSettings {

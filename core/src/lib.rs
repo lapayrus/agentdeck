@@ -1,4 +1,7 @@
+pub mod actions;
 pub mod detect;
+pub mod hash;
+pub mod jsonc_edit;
 pub mod jsonc;
 pub mod model;
 pub mod parser;

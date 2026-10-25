@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::model::{Artifact, ArtifactType, Ecosystem, ReloadHint, Scope};
-use crate::parser::{
-    parse_agent_markdown, parse_agent_toml, parse_markdown, DescriptionRule,
-};
+use crate::parser::{parse_agent_toml, parse_markdown, DescriptionRule};
 use crate::roots::{resolve_project_root, Roots};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1677,6 +1675,7 @@ pub fn build_candidate(
     artifact.reload = source.reload;
     artifact.ecosystems = vec![source.ecosystem];
     artifact.id = make_id(source.artifact_type, source.scope, path, key);
+    artifact.content_hash = crate::hash::hash_file(path);
 
     Candidate {
         artifact,
