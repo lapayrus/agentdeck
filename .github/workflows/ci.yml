@@ -26,5 +26,7 @@ jobs:
         run: npm run build
       - name: Core tests
         run: cargo test -p agentdeck-core
+      - name: Scan benchmark
+        run: cargo test --release -p agentdeck-core --test performance -- --ignored --nocapture
       - name: Tauri type check
         run: cargo check -p agentdeck

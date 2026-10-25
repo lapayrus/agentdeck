@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import ActionDialog from "./components/ActionDialog";
 import SettingsPanel from "./components/SettingsPanel";
@@ -145,6 +146,24 @@ export default function App({
     const saved = await client.saveSettings(next);
     setSettings(saved);
   };
+
+  const refreshRef = useRef<() => void>(() => {});
+  refreshRef.current = refresh;
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    listen("agentdeck://changed", () => refreshRef.current())
+      .then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const applyScan = (result: ScanResult) => {
     setScan(result);

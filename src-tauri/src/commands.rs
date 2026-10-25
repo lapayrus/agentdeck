@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
+use std::time::{Duration, Instant};
 
 use agentdeck_core::actions::{
     ActionPlan, ActionResult, HistoryEntry, SnapshotDiff, TrashEntry,
@@ -9,7 +10,54 @@ use agentdeck_core::model::{Ecosystem, ScanRequest, ScanResult};
 use agentdeck_core::roots::{resolve_project_root, Roots};
 use agentdeck_core::state::{AppSettings, Store};
 use agentdeck_core::Manager;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
+
+use notify::Watcher;
+
+pub struct WatcherState(pub Mutex<Option<notify::RecommendedWatcher>>);
+
+pub fn start_watcher(
+    app: AppHandle,
+    project: Option<PathBuf>,
+) -> Option<notify::RecommendedWatcher> {
+    let paths = agentdeck_core::source::watch_paths(&Roots::discover(project));
+    if paths.is_empty() {
+        return None;
+    }
+    let (sender, receiver) = mpsc::channel();
+    let mut watcher = notify::recommended_watcher(
+        move |result: Result<notify::Event, notify::Error>| {
+            let _ = sender.send(result);
+        },
+    )
+    .ok()?;
+    for path in paths {
+        let mode = if path.is_dir() {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        };
+        let _ = watcher.watch(&path, mode);
+    }
+    std::thread::spawn(move || {
+        while receiver.recv().is_ok() {
+            let mut last = Instant::now();
+            loop {
+                let remaining =
+                    Duration::from_millis(300).saturating_sub(last.elapsed());
+                if remaining.is_zero() {
+                    break;
+                }
+                match receiver.recv_timeout(remaining) {
+                    Ok(_) => last = Instant::now(),
+                    Err(_) => break,
+                }
+            }
+            let _ = app.emit("agentdeck://changed", ());
+        }
+    });
+    Some(watcher)
+}
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
@@ -82,6 +130,8 @@ pub fn scan(request: Option<ScanRequest>, state: State<AppState>) -> Result<Scan
 pub fn set_project(
     project_root: Option<String>,
     state: State<AppState>,
+    watcher: State<WatcherState>,
+    app: AppHandle,
 ) -> Result<ScanResult, String> {
     let resolved = match project_root {
         Some(value) if !value.trim().is_empty() => {
@@ -97,6 +147,11 @@ pub fn set_project(
                 .project_root
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = None;
+            *watcher
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) =
+                start_watcher(app, None);
             return Ok(scan_with(&state, None));
         }
     };
@@ -105,6 +160,12 @@ pub fn set_project(
         .project_root
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = Some(resolved.clone());
+
+    *watcher
+        .0
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) =
+        start_watcher(app, Some(resolved.clone()));
 
     let path_text = resolved.to_string_lossy().to_string();
     {

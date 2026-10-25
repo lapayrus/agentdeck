@@ -3,6 +3,7 @@
 mod commands;
 
 use commands::AppState;
+use std::sync::Mutex;
 use tauri::{Manager, PhysicalPosition, PhysicalSize};
 
 fn main() {
@@ -10,7 +11,13 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::load())
+        .manage(commands::WatcherState(Mutex::new(None)))
         .setup(|app| {
+            *app.state::<commands::WatcherState>()
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) =
+                commands::start_watcher(app.handle().clone(), None);
             let window_state = {
                 let state = app.state::<AppState>();
                 let settings = state

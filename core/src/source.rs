@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::model::{Artifact, ArtifactType, Ecosystem, ReloadHint, Scope};
@@ -984,6 +985,36 @@ pub fn read_only_sources(roots: &Roots) -> Vec<Source> {
     sources
 }
 
+pub fn watch_paths(roots: &Roots) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    let mut push = |path: PathBuf| {
+        if path.exists() && !paths.contains(&path) {
+            paths.push(path);
+        }
+    };
+    for ecosystem in Ecosystem::ALL {
+        push(roots.ecosystem_root(ecosystem));
+    }
+    push(roots.home.join(".claude.json"));
+    push(roots.home.join(".agents"));
+    if let Some(project) = &roots.project_root {
+        let (resolved, _) = resolve_project_root(project);
+        for folder in [".claude", ".codex", ".opencode", ".agents", ".commandcode"] {
+            push(resolved.join(folder));
+        }
+        for file in [
+            ".mcp.json",
+            "opencode.json",
+            "opencode.jsonc",
+            "AGENTS.md",
+            "CLAUDE.md",
+        ] {
+            push(resolved.join(file));
+        }
+    }
+    paths
+}
+
 pub fn sources(roots: &Roots) -> Vec<Source> {
     let mut sources = Vec::new();
     sources.extend(claude_agent_sources(roots));
@@ -1088,7 +1119,7 @@ fn collect_config(
             return Vec::new();
         }
     };
-    match source.format {
+    let mut candidates = match source.format {
         Format::McpJson => match crate::jsonc::parse(&text) {
             Ok(value) => json_mcp_candidates(source, project_root, &value, warnings),
             Err(error) => {
@@ -1101,7 +1132,12 @@ fn collect_config(
         Format::PluginJson => plugin_json_candidates(source, &text, warnings),
         Format::PluginToml => plugin_toml_candidates(source, &text, warnings),
         _ => Vec::new(),
+    };
+    let file_hash = crate::hash::hash_text(&text);
+    for candidate in &mut candidates {
+        candidate.artifact.content_hash = Some(file_hash.clone());
     }
+    candidates
 }
 
 fn string_list(value: Option<&serde_json::Value>) -> Vec<String> {
@@ -1460,18 +1496,20 @@ fn read_command(source: &Source, path: &Path) -> Result<Candidate, String> {
         Ok(None) => None,
         Err(error) => return Err(format!("{}: {error}", path.display())),
     };
-    Ok(build_candidate(
+    let mut candidate = build_candidate(
         source,
         name,
         description,
         Vec::new(),
         path,
         None,
-    ))
+    );
+    candidate.artifact.content_hash = Some(crate::hash::hash_text(&text));
+    Ok(candidate)
 }
 
 fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
-    let mut candidates = Vec::new();
+    let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(&source.root)
         .max_depth(3)
         .into_iter()
@@ -1490,19 +1528,35 @@ fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> 
         if !entry.file_type().is_file() {
             continue;
         }
-        let path = entry.path();
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let candidate = match source.format {
-            Format::MarkdownAgent if extension == "md" => read_markdown_agent(source, path),
-            Format::TomlAgent if extension == "toml" => read_toml_agent(source, path),
-            Format::CommandMarkdown if extension == "md" => read_command(source, path),
-            _ => continue,
-        };
-        match candidate {
+        paths.push(entry.into_path());
+    }
+
+    let results: Vec<Result<Candidate, String>> = paths
+        .par_iter()
+        .filter_map(|path| {
+            let extension = path
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            match source.format {
+                Format::MarkdownAgent if extension == "md" => {
+                    Some(read_markdown_agent(source, path))
+                }
+                Format::TomlAgent if extension == "toml" => {
+                    Some(read_toml_agent(source, path))
+                }
+                Format::CommandMarkdown if extension == "md" => {
+                    Some(read_command(source, path))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+
+    let mut candidates = Vec::with_capacity(results.len());
+    for result in results {
+        match result {
             Ok(candidate) => candidates.push(candidate),
             Err(warning) => warnings.push(warning),
         }
@@ -1511,7 +1565,6 @@ fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> 
 }
 
 fn collect_skill_dirs(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
-    let mut candidates = Vec::new();
     let entries = match fs::read_dir(&source.root) {
         Ok(entries) => entries,
         Err(error) => {
@@ -1519,23 +1572,39 @@ fn collect_skill_dirs(source: &Source, warnings: &mut Vec<String>) -> Vec<Candid
                 "Could not read {}: {error}",
                 source.root.display()
             ));
-            return candidates;
+            return Vec::new();
         }
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let folder = entry.file_name().to_string_lossy().to_string();
-        if folder.starts_with('.') || folder == "node_modules" {
-            continue;
-        }
-        let skill_file = path.join("SKILL.md");
-        if !skill_file.is_file() {
-            continue;
-        }
-        match read_skill(source, &path, &skill_file) {
+    let directories: Vec<PathBuf> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let folder = entry.file_name().to_string_lossy().to_string();
+            if folder.starts_with('.') || folder == "node_modules" {
+                return None;
+            }
+            let skill_file = path.join("SKILL.md");
+            if !skill_file.is_file() {
+                return None;
+            }
+            Some(path)
+        })
+        .collect();
+
+    let results: Vec<Result<Candidate, String>> = directories
+        .par_iter()
+        .map(|directory| {
+            let skill_file = directory.join("SKILL.md");
+            read_skill(source, directory, &skill_file)
+        })
+        .collect();
+
+    let mut candidates = Vec::with_capacity(results.len());
+    for result in results {
+        match result {
             Ok(candidate) => candidates.push(candidate),
             Err(warning) => warnings.push(warning),
         }
@@ -1582,14 +1651,16 @@ fn read_skill(source: &Source, directory: &Path, skill_file: &Path) -> Result<Ca
         }
     }
 
-    Ok(build_candidate(
+    let mut candidate = build_candidate(
         source,
         meta.name,
         meta.description,
         warnings,
         skill_file,
         None,
-    ))
+    );
+    candidate.artifact.content_hash = Some(crate::hash::hash_text(&text));
+    Ok(candidate)
 }
 
 const RESERVED_COMMAND_CODE_AGENTS: [&str; 4] = ["explore", "plan", "review", "general"];
@@ -1624,14 +1695,16 @@ fn read_markdown_agent(source: &Source, path: &Path) -> Result<Candidate, String
         ));
     }
 
-    Ok(build_candidate(
+    let mut candidate = build_candidate(
         source,
         meta.name,
         meta.description,
         meta.warnings,
         path,
         None,
-    ))
+    );
+    candidate.artifact.content_hash = Some(crate::hash::hash_text(&text));
+    Ok(candidate)
 }
 
 fn read_toml_agent(source: &Source, path: &Path) -> Result<Candidate, String> {
@@ -1642,14 +1715,16 @@ fn read_toml_agent(source: &Source, path: &Path) -> Result<Candidate, String> {
     if let Some(reason) = &meta.skip_reason {
         return Err(format!("{} was skipped: {reason}.", path.display()));
     }
-    Ok(build_candidate(
+    let mut candidate = build_candidate(
         source,
         meta.name,
         meta.description,
         meta.warnings,
         path,
         None,
-    ))
+    );
+    candidate.artifact.content_hash = Some(crate::hash::hash_text(&text));
+    Ok(candidate)
 }
 
 pub fn build_candidate(
@@ -1675,7 +1750,6 @@ pub fn build_candidate(
     artifact.reload = source.reload;
     artifact.ecosystems = vec![source.ecosystem];
     artifact.id = make_id(source.artifact_type, source.scope, path, key);
-    artifact.content_hash = crate::hash::hash_file(path);
 
     Candidate {
         artifact,

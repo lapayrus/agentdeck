@@ -11,6 +11,7 @@ pub mod source;
 pub mod state;
 
 use chrono::Utc;
+use rayon::prelude::*;
 use model::{Ecosystem, EcosystemDetection, ScanResult};
 use roots::Roots;
 
@@ -39,13 +40,22 @@ impl Manager {
             .collect();
 
         let sources = source::sources(&self.roots);
+        let collected: Vec<(Vec<source::Candidate>, Vec<String>)> = sources
+            .par_iter()
+            .map(|entry| {
+                let mut local_warnings = Vec::new();
+                let candidates = source::collect(
+                    entry,
+                    self.roots.project_root.as_deref(),
+                    &mut local_warnings,
+                );
+                (candidates, local_warnings)
+            })
+            .collect();
         let mut candidates = Vec::new();
-        for source in &sources {
-            candidates.extend(source::collect(
-                source,
-                self.roots.project_root.as_deref(),
-                &mut warnings,
-            ));
+        for (entry_candidates, entry_warnings) in collected {
+            candidates.extend(entry_candidates);
+            warnings.extend(entry_warnings);
         }
         let artifacts = resolve::resolve(candidates, &mut warnings);
 
