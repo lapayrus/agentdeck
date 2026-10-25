@@ -714,4 +714,72 @@ mod tests {
         assert_eq!(local[0].scope, model::Scope::ProjectLocal);
         assert_eq!(local[0].ecosystem, Ecosystem::CommandCode);
     }
+
+    #[test]
+    fn read_only_artifacts_are_listed_but_not_managed() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+
+        write_json(
+            &home.path().join(".claude/settings.json"),
+            serde_json::json!({
+                "hooks": {
+                    "PreToolUse": [{ "matcher": "Bash", "command": "echo hi" }]
+                }
+            }),
+        );
+        fs::create_dir_all(home.path().join(".claude/commands")).unwrap();
+        fs::write(
+            home.path().join(".claude/commands/deploy.md"),
+            "---\ndescription: Deploy it\n---\nRun the deploy.\n",
+        )
+        .unwrap();
+
+        fs::write(project.join("CLAUDE.md"), "# Project rules\n").unwrap();
+        fs::create_dir_all(project.join(".claude/commands")).unwrap();
+        fs::write(
+            project.join(".claude/commands/review.md"),
+            "Review the diff.\n",
+        )
+        .unwrap();
+
+        fs::create_dir_all(home.path().join(".codex")).unwrap();
+        fs::write(
+            home.path().join(".codex/config.toml"),
+            "[plugins.\"test@marketplace\"]\nenabled = true\n",
+        )
+        .unwrap();
+
+        fs::create_dir_all(project.join(".commandcode/commands")).unwrap();
+        fs::write(
+            project.join(".commandcode/commands/publish.md"),
+            "Publish the package.\n",
+        )
+        .unwrap();
+
+        let result = manager(home.path(), Some(&project)).scan();
+
+        let has = |name: &str, artifact_type: model::ArtifactType| {
+            result.artifacts.iter().any(|artifact| {
+                artifact.name == name && artifact.artifact_type == artifact_type
+            })
+        };
+        assert!(has("CLAUDE.md", model::ArtifactType::Memory));
+        assert!(has("settings.json", model::ArtifactType::Settings));
+        assert!(has("PreToolUse", model::ArtifactType::Hook));
+        assert!(has("deploy", model::ArtifactType::Command));
+        assert!(has("review", model::ArtifactType::Command));
+        assert!(has("publish", model::ArtifactType::Command));
+        assert!(has("test@marketplace", model::ArtifactType::Plugin));
+
+        let read_only: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| !artifact.managed)
+            .collect();
+        assert!(!read_only.is_empty());
+        assert!(read_only.iter().all(|artifact| !artifact.can_remove));
+        assert!(read_only.iter().all(|artifact| !artifact.can_disable));
+    }
 }

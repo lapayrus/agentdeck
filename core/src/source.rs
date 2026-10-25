@@ -14,6 +14,8 @@ pub enum Layout {
     FilesRecursive,
     SkillDirs,
     ConfigFile,
+    SingleFile,
+    EntryDirs,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,7 +25,11 @@ pub enum Format {
     SkillMarkdown,
     McpJson,
     McpToml,
+    CommandMarkdown,
     OtherFile,
+    HookJson,
+    PluginJson,
+    PluginToml,
 }
 
 #[derive(Clone, Debug)]
@@ -627,6 +633,359 @@ pub fn project_slug(path: &Path) -> String {
     slug
 }
 
+pub fn read_only_sources(roots: &Roots) -> Vec<Source> {
+    let mut sources = Vec::new();
+    let global = |ecosystem: Ecosystem,
+                  artifact_type: ArtifactType,
+                  path: PathBuf,
+                  format: Format,
+                  rank: u32,
+                  reload: ReloadHint| Source {
+        ecosystem,
+        artifact_type,
+        scope: Scope::Global,
+        root: path,
+        layout: match format {
+            Format::OtherFile => Layout::SingleFile,
+            _ => Layout::ConfigFile,
+        },
+        format,
+        rank,
+        reload,
+        disable_mechanism: None,
+    };
+
+    sources.push(global(
+        Ecosystem::Claude,
+        ArtifactType::Settings,
+        roots.home.join(".claude").join("settings.json"),
+        Format::OtherFile,
+        100,
+        ReloadHint::Live,
+    ));
+    sources.push(global(
+        Ecosystem::Claude,
+        ArtifactType::Hook,
+        roots.home.join(".claude").join("settings.json"),
+        Format::HookJson,
+        100,
+        ReloadHint::Live,
+    ));
+    sources.push(global(
+        Ecosystem::Claude,
+        ArtifactType::Memory,
+        roots.home.join(".claude").join("CLAUDE.md"),
+        Format::OtherFile,
+        100,
+        ReloadHint::Live,
+    ));
+    sources.push(Source {
+        ecosystem: Ecosystem::Claude,
+        artifact_type: ArtifactType::Plugin,
+        scope: Scope::Global,
+        root: roots
+            .home
+            .join(".claude")
+            .join("plugins")
+            .join("installed_plugins.json"),
+        layout: Layout::ConfigFile,
+        format: Format::PluginJson,
+        rank: 100,
+        reload: ReloadHint::Live,
+        disable_mechanism: None,
+    });
+    sources.push(Source {
+        ecosystem: Ecosystem::Claude,
+        artifact_type: ArtifactType::Command,
+        scope: Scope::Global,
+        root: roots.home.join(".claude").join("commands"),
+        layout: Layout::FilesRecursive,
+        format: Format::CommandMarkdown,
+        rank: 100,
+        reload: ReloadHint::Live,
+        disable_mechanism: None,
+    });
+
+    sources.push(global(
+        Ecosystem::Codex,
+        ArtifactType::Settings,
+        roots.home.join(".codex").join("config.toml"),
+        Format::OtherFile,
+        100,
+        ReloadHint::Restart,
+    ));
+    sources.push(Source {
+        ecosystem: Ecosystem::Codex,
+        artifact_type: ArtifactType::Plugin,
+        scope: Scope::Global,
+        root: roots.home.join(".codex").join("config.toml"),
+        layout: Layout::ConfigFile,
+        format: Format::PluginToml,
+        rank: 101,
+        reload: ReloadHint::Restart,
+        disable_mechanism: None,
+    });
+    sources.push(global(
+        Ecosystem::Codex,
+        ArtifactType::Hook,
+        roots.home.join(".codex").join("hooks.json"),
+        Format::HookJson,
+        100,
+        ReloadHint::Restart,
+    ));
+    sources.push(global(
+        Ecosystem::Codex,
+        ArtifactType::Memory,
+        roots.home.join(".codex").join("AGENTS.md"),
+        Format::OtherFile,
+        100,
+        ReloadHint::NextTurn,
+    ));
+
+    sources.push(global(
+        Ecosystem::Opencode,
+        ArtifactType::Settings,
+        roots.home.join(".config").join("opencode").join("opencode.json"),
+        Format::OtherFile,
+        100,
+        ReloadHint::NextSession,
+    ));
+    sources.push(global(
+        Ecosystem::Opencode,
+        ArtifactType::Memory,
+        roots.home.join(".config").join("opencode").join("AGENTS.md"),
+        Format::OtherFile,
+        100,
+        ReloadHint::NextTurn,
+    ));
+
+    sources.push(global(
+        Ecosystem::CommandCode,
+        ArtifactType::Settings,
+        roots.home.join(".commandcode").join("settings.json"),
+        Format::OtherFile,
+        100,
+        ReloadHint::NextTurn,
+    ));
+    sources.push(Source {
+        ecosystem: Ecosystem::CommandCode,
+        artifact_type: ArtifactType::Command,
+        scope: Scope::Global,
+        root: roots.home.join(".commandcode").join("commands"),
+        layout: Layout::FilesRecursive,
+        format: Format::CommandMarkdown,
+        rank: 100,
+        reload: ReloadHint::NextTurn,
+        disable_mechanism: None,
+    });
+    sources.push(Source {
+        ecosystem: Ecosystem::CommandCode,
+        artifact_type: ArtifactType::Plugin,
+        scope: Scope::Global,
+        root: roots.home.join(".commandcode").join("mods"),
+        layout: Layout::EntryDirs,
+        format: Format::OtherFile,
+        rank: 100,
+        reload: ReloadHint::NextTurn,
+        disable_mechanism: None,
+    });
+
+    for (directory, rank) in project_layers(roots) {
+        let settings_rank = 100 + rank * 10;
+        for name in ["settings.json", "settings.local.json"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Claude,
+                artifact_type: ArtifactType::Settings,
+                scope: Scope::Project,
+                root: directory.join(".claude").join(name),
+                layout: Layout::SingleFile,
+                format: Format::OtherFile,
+                rank: settings_rank,
+                reload: ReloadHint::Live,
+                disable_mechanism: None,
+            });
+        }
+        sources.push(Source {
+            ecosystem: Ecosystem::Claude,
+            artifact_type: ArtifactType::Hook,
+            scope: Scope::Project,
+            root: directory.join(".claude").join("settings.json"),
+            layout: Layout::ConfigFile,
+            format: Format::HookJson,
+            rank: settings_rank,
+            reload: ReloadHint::Live,
+            disable_mechanism: None,
+        });
+        for name in ["CLAUDE.md", "AGENTS.md"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Claude,
+                artifact_type: ArtifactType::Memory,
+                scope: Scope::Project,
+                root: directory.join(name),
+                layout: Layout::SingleFile,
+                format: Format::OtherFile,
+                rank: settings_rank,
+                reload: ReloadHint::Live,
+                disable_mechanism: None,
+            });
+        }
+        sources.push(Source {
+            ecosystem: Ecosystem::Claude,
+            artifact_type: ArtifactType::Command,
+            scope: Scope::Project,
+            root: directory.join(".claude").join("commands"),
+            layout: Layout::FilesRecursive,
+            format: Format::CommandMarkdown,
+            rank: settings_rank,
+            reload: ReloadHint::Live,
+            disable_mechanism: None,
+        });
+
+        sources.push(Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: ArtifactType::Settings,
+            scope: Scope::Project,
+            root: directory.join(".codex").join("config.toml"),
+            layout: Layout::SingleFile,
+            format: Format::OtherFile,
+            rank: settings_rank,
+            reload: ReloadHint::Restart,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: ArtifactType::Plugin,
+            scope: Scope::Project,
+            root: directory.join(".codex").join("config.toml"),
+            layout: Layout::ConfigFile,
+            format: Format::PluginToml,
+            rank: settings_rank,
+            reload: ReloadHint::Restart,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: ArtifactType::Hook,
+            scope: Scope::Project,
+            root: directory.join(".codex").join("hooks.json"),
+            layout: Layout::ConfigFile,
+            format: Format::HookJson,
+            rank: settings_rank,
+            reload: ReloadHint::Restart,
+            disable_mechanism: None,
+        });
+        for name in ["AGENTS.md", "AGENTS.override.md"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Codex,
+                artifact_type: ArtifactType::Memory,
+                scope: Scope::Project,
+                root: directory.join(name),
+                layout: Layout::SingleFile,
+                format: Format::OtherFile,
+                rank: settings_rank,
+                reload: ReloadHint::NextTurn,
+                disable_mechanism: None,
+            });
+        }
+
+        for name in ["opencode.json", "opencode.jsonc"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Opencode,
+                artifact_type: ArtifactType::Settings,
+                scope: Scope::Project,
+                root: directory.join(name),
+                layout: Layout::SingleFile,
+                format: Format::OtherFile,
+                rank: settings_rank,
+                reload: ReloadHint::NextSession,
+                disable_mechanism: None,
+            });
+        }
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Command,
+            scope: Scope::Project,
+            root: directory.join(".opencode").join("commands"),
+            layout: Layout::FilesRecursive,
+            format: Format::CommandMarkdown,
+            rank: settings_rank,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Plugin,
+            scope: Scope::Project,
+            root: directory.join(".opencode").join("plugins"),
+            layout: Layout::EntryDirs,
+            format: Format::OtherFile,
+            rank: settings_rank,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Memory,
+            scope: Scope::Project,
+            root: directory.join("AGENTS.md"),
+            layout: Layout::SingleFile,
+            format: Format::OtherFile,
+            rank: settings_rank,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: None,
+        });
+
+        for name in ["settings.json", "settings.local.json"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::CommandCode,
+                artifact_type: ArtifactType::Settings,
+                scope: Scope::Project,
+                root: directory.join(".commandcode").join(name),
+                layout: Layout::SingleFile,
+                format: Format::OtherFile,
+                rank: settings_rank,
+                reload: ReloadHint::NextTurn,
+                disable_mechanism: None,
+            });
+        }
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Command,
+            scope: Scope::Project,
+            root: directory.join(".commandcode").join("commands"),
+            layout: Layout::FilesRecursive,
+            format: Format::CommandMarkdown,
+            rank: settings_rank,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Plugin,
+            scope: Scope::Project,
+            root: directory.join(".commandcode").join("mods"),
+            layout: Layout::EntryDirs,
+            format: Format::OtherFile,
+            rank: settings_rank,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: None,
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Memory,
+            scope: Scope::Project,
+            root: directory.join("AGENTS.md"),
+            layout: Layout::SingleFile,
+            format: Format::OtherFile,
+            rank: settings_rank,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: None,
+        });
+    }
+
+    sources
+}
+
 pub fn sources(roots: &Roots) -> Vec<Source> {
     let mut sources = Vec::new();
     sources.extend(claude_agent_sources(roots));
@@ -638,6 +997,7 @@ pub fn sources(roots: &Roots) -> Vec<Source> {
     sources.extend(opencode_skill_sources(roots));
     sources.extend(commandcode_skill_sources(roots));
     sources.extend(mcp_sources(roots));
+    sources.extend(read_only_sources(roots));
     sources
 }
 
@@ -652,14 +1012,67 @@ pub fn collect(
         }
         return collect_config(source, project_root, warnings);
     }
+    if source.layout == Layout::SingleFile {
+        return collect_single_file(source);
+    }
     if !source.root.is_dir() {
         return Vec::new();
     }
     match source.layout {
         Layout::FilesRecursive => collect_files(source, warnings),
         Layout::SkillDirs => collect_skill_dirs(source, warnings),
-        Layout::ConfigFile => Vec::new(),
+        Layout::EntryDirs => collect_entry_dirs(source, warnings),
+        Layout::SingleFile | Layout::ConfigFile => Vec::new(),
     }
+}
+
+fn collect_single_file(source: &Source) -> Vec<Candidate> {
+    if !source.root.is_file() {
+        return Vec::new();
+    }
+    let name = source
+        .root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("file")
+        .to_string();
+    vec![build_candidate(
+        source,
+        name,
+        None,
+        Vec::new(),
+        &source.root,
+        None,
+    )]
+}
+
+fn collect_entry_dirs(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
+    let entries = match fs::read_dir(&source.root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warnings.push(format!(
+                "Could not read {}: {error}",
+                source.root.display()
+            ));
+            return Vec::new();
+        }
+    };
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        candidates.push(build_candidate(
+            source,
+            name,
+            None,
+            Vec::new(),
+            &entry.path(),
+            None,
+        ));
+    }
+    candidates
 }
 
 fn collect_config(
@@ -686,6 +1099,9 @@ fn collect_config(
             }
         },
         Format::McpToml => toml_mcp_candidates(source, &text, warnings),
+        Format::HookJson => hook_json_candidates(source, &text, warnings),
+        Format::PluginJson => plugin_json_candidates(source, &text, warnings),
+        Format::PluginToml => plugin_toml_candidates(source, &text, warnings),
         _ => Vec::new(),
     }
 }
@@ -929,6 +1345,133 @@ fn toml_mcp_candidates(
     candidates
 }
 
+fn hook_json_candidates(
+    source: &Source,
+    text: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let value = match crate::jsonc::parse(text) {
+        Ok(value) => value,
+        Err(error) => {
+            warnings.push(format!("{}: {error}", source.root.display()));
+            return Vec::new();
+        }
+    };
+    let Some(hooks) = value.get("hooks").and_then(|value| value.as_object()) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for (event, entry) in hooks {
+        let key_path = format!("hooks.{event}");
+        let description = entry
+            .as_array()
+            .map(|handlers| format!("{} handler(s)", handlers.len()));
+        let mut candidate = build_candidate(
+            source,
+            event.clone(),
+            description,
+            Vec::new(),
+            &source.root,
+            Some(&key_path),
+        );
+        candidate.artifact.key_path = Some(key_path);
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn plugin_json_candidates(
+    source: &Source,
+    text: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let value = match crate::jsonc::parse(text) {
+        Ok(value) => value,
+        Err(error) => {
+            warnings.push(format!("{}: {error}", source.root.display()));
+            return Vec::new();
+        }
+    };
+    let Some(plugins) = value.get("plugins").and_then(|value| value.as_object()) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for name in plugins.keys() {
+        let key_path = format!("plugins.{name}");
+        let mut candidate = build_candidate(
+            source,
+            name.clone(),
+            None,
+            Vec::new(),
+            &source.root,
+            Some(&key_path),
+        );
+        candidate.artifact.key_path = Some(key_path);
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn plugin_toml_candidates(
+    source: &Source,
+    text: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let document = match text.parse::<toml_edit::DocumentMut>() {
+        Ok(document) => document,
+        Err(error) => {
+            warnings.push(format!(
+                "{}: invalid TOML: {error}",
+                source.root.display()
+            ));
+            return Vec::new();
+        }
+    };
+    let Some(plugins) = document.get("plugins").and_then(|item| item.as_table_like()) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for (name, _) in plugins.iter() {
+        let key_path = format!("plugins.{name}");
+        let mut candidate = build_candidate(
+            source,
+            name.to_string(),
+            None,
+            Vec::new(),
+            &source.root,
+            Some(&key_path),
+        );
+        candidate.artifact.key_path = Some(key_path);
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn read_command(source: &Source, path: &Path) -> Result<Candidate, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    let name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("command")
+        .to_string();
+    let description = match crate::parser::split_frontmatter(&text) {
+        Ok(Some(frontmatter)) => {
+            crate::parser::string_field(&frontmatter.data, "description")
+        }
+        Ok(None) => None,
+        Err(error) => return Err(format!("{}: {error}", path.display())),
+    };
+    Ok(build_candidate(
+        source,
+        name,
+        description,
+        Vec::new(),
+        path,
+        None,
+    ))
+}
+
 fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     for entry in WalkDir::new(&source.root)
@@ -958,6 +1501,7 @@ fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> 
         let candidate = match source.format {
             Format::MarkdownAgent if extension == "md" => read_markdown_agent(source, path),
             Format::TomlAgent if extension == "toml" => read_toml_agent(source, path),
+            Format::CommandMarkdown if extension == "md" => read_command(source, path),
             _ => continue,
         };
         match candidate {
