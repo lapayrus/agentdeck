@@ -6,7 +6,7 @@
 
 **Status:** done
 
-**Resolution:** Implemented on integration/agentdeck-v1.
+**Resolution:** Implemented on integration/agentdeck-v1. The 10,000-file benchmark scans in 1.105s on this machine and runs in CI with `--release --ignored`.
 
 - [ ] A synthetic 10,000-file fixture across all ecosystems is generated deterministically by a script
 - [ ] Cold start, full scan and idle working set are measured and reported by the benchmark

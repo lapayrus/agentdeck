@@ -1578,6 +1578,31 @@ mod tests {
         let back: SnapshotDiff =
             serde_json::from_str(&serde_json::to_string(&diff).unwrap()).unwrap();
         assert_eq!(back.current, "b");
+
+        let scan = ScanResult {
+            artifacts: vec![Artifact::new(
+                Ecosystem::Claude,
+                ArtifactType::Agent,
+                Scope::Global,
+                "x",
+                "C:/x.md",
+            )],
+            detections: vec![crate::model::EcosystemDetection {
+                ecosystem: Ecosystem::Claude,
+                detected: true,
+                version: Some("2.1.215".into()),
+                checked_paths: vec!["C:/x".into()],
+                capabilities: vec!["disable-agent".into()],
+                reason: None,
+            }],
+            warnings: Vec::new(),
+            project_root: None,
+            is_git_repository: false,
+            scanned_at: "now".into(),
+        };
+        let back: ScanResult =
+            serde_json::from_str(&serde_json::to_string(&scan).unwrap()).unwrap();
+        assert_eq!(back.detections[0].capabilities, vec!["disable-agent"]);
     }
 }
 

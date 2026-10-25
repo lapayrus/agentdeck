@@ -6,7 +6,7 @@
 
 **Status:** done
 
-**Resolution:** Implemented on integration/agentdeck-v1.
+**Resolution:** Implemented on integration/agentdeck-v1. Both installers were built locally: NSIS 2.73 MiB and MSI 3.75 MiB, each with a `.sig` updater signature. The GitHub Release workflow uses repository secrets for the same key. The `OWNER` placeholder in the updater endpoint still needs the real repository name.
 
 - [ ] A tagged push produces a draft GitHub Release containing an MSI, an NSIS installer and the signed updater artifacts
 - [ ] The MSI installs machine-wide and the NSIS installer installs per-user
