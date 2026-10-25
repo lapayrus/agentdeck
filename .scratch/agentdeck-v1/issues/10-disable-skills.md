@@ -4,7 +4,9 @@
 
 **Blocked by:** 05, 09
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Claude Code skills disable through the native skill override or an equivalent documented switch and re-enable cleanly
 - [ ] Codex skills disable through the per-skill configuration entry and re-enable cleanly

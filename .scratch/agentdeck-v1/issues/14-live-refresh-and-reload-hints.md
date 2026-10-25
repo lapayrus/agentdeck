@@ -4,7 +4,9 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Adding, editing or deleting a file in a watched root updates the list within the debounce window
 - [ ] A burst of changes produces one rescan, not one per file event

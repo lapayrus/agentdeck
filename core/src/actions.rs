@@ -27,6 +27,7 @@ pub struct PlanFile {
     pub path: String,
     pub operation: String,
     pub description: String,
+    pub expected_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -161,50 +162,6 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn set_frontmatter_flag(text: &str, key: &str, enabled: bool) -> Result<String, String> {
-    let normalized = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let has_frontmatter = normalized.starts_with("---");
-    if !has_frontmatter {
-        if enabled {
-            return Ok(format!("---\n{key}: true\n---\n{normalized}"));
-        }
-        return Ok(text.to_string());
-    }
-    let mut lines: Vec<String> = normalized
-        .split_inclusive('\n')
-        .map(|line| line.to_string())
-        .collect();
-    let closing = lines
-        .iter()
-        .enumerate()
-        .skip(1)
-        .find(|(_, line)| line.trim_end_matches(['\r', '\n']).trim() == "---")
-        .map(|(index, _)| index);
-    let Some(closing) = closing else {
-        return Err("The frontmatter never closes.".into());
-    };
-    let existing = lines.iter().position(|line| {
-        line.trim_start()
-            .strip_prefix(key)
-            .is_some_and(|rest| rest.trim_start().starts_with(':'))
-    });
-    match (enabled, existing) {
-        (true, None) => lines.insert(closing, format!("{key}: true\n")),
-        (true, Some(index)) => {
-            let indent: String = lines[index]
-                .chars()
-                .take_while(|character| *character == ' ' || *character == '\t')
-                .collect();
-            lines[index] = format!("{indent}{key}: true\n");
-        }
-        (false, Some(index)) => {
-            lines.remove(index);
-        }
-        (false, None) => {}
-    }
-    Ok(lines.concat())
-}
-
 impl Manager {
     fn history_dir(&self) -> PathBuf {
         self.roots().app_data.join("history")
@@ -226,6 +183,10 @@ impl Manager {
         self.roots().app_data.join("quarantine")
     }
 
+    fn quarantine_manifest(&self) -> PathBuf {
+        self.quarantine_dir().join("manifest.json")
+    }
+
     fn project_root(&self) -> Result<PathBuf, String> {
         self.roots()
             .project_root
@@ -244,11 +205,15 @@ impl Manager {
         }
     }
 
-    fn commandcode_settings(&self) -> Result<PathBuf, String> {
-        Ok(self
-            .project_root()?
-            .join(".commandcode")
-            .join("settings.json"))
+    fn commandcode_settings(&self, scope: Scope) -> Result<PathBuf, String> {
+        if scope == Scope::Global {
+            Ok(self.roots().home.join(".commandcode").join("settings.json"))
+        } else {
+            Ok(self
+                .project_root()?
+                .join(".commandcode")
+                .join("settings.json"))
+        }
     }
 
     fn codex_config(&self, scope: Scope) -> Result<PathBuf, String> {
@@ -321,6 +286,7 @@ impl Manager {
         path: &Path,
         artifact: &Artifact,
         action: &str,
+        expected: &HashMap<String, String>,
         default_contents: &str,
         edit: F,
     ) -> Result<(), String>
@@ -334,13 +300,24 @@ impl Manager {
         } else {
             default_contents.to_string()
         };
-        if existed && path == Path::new(&artifact.primary_path) {
-            if let Some(expected) = &artifact.content_hash {
-                if &hash_text(&text) != expected {
+        if existed {
+            let path_key = path.to_string_lossy().to_string();
+            if let Some(expected_hash) = expected.get(&path_key) {
+                if &hash_text(&text) != expected_hash {
                     return Err(format!(
-                        "{} changed since the last scan. Rescan before trying again.",
+                        "{} changed since the action was planned. Rescan before trying again.",
                         path.display()
                     ));
+                }
+            }
+            if path == Path::new(&artifact.primary_path) {
+                if let Some(expected_hash) = &artifact.content_hash {
+                    if &hash_text(&text) != expected_hash {
+                        return Err(format!(
+                            "{} changed since the last scan. Rescan before trying again.",
+                            path.display()
+                        ));
+                    }
                 }
             }
         }
@@ -359,6 +336,7 @@ impl Manager {
         artifact: &Artifact,
         ecosystem: Ecosystem,
         enable: bool,
+        expected: &HashMap<String, String>,
     ) -> Result<(), String> {
         let action = if enable { "enable" } else { "disable" };
         match (artifact.artifact_type, ecosystem) {
@@ -366,7 +344,7 @@ impl Manager {
                 let path = self.claude_settings(artifact.scope)?;
                 let value = serde_json::to_string(&format!("Agent({})", artifact.name))
                     .map_err(|error| error.to_string())?;
-                self.edit_file(&path, artifact, action, "{}", |text| {
+                self.edit_file(&path, artifact, action, expected, "{}", |text| {
                     let text = jsonc_edit::ensure_object(text, &["permissions"])?;
                     if enable {
                         jsonc_edit::remove_array_value(&text, &["permissions", "deny"], &value)
@@ -376,10 +354,11 @@ impl Manager {
                 })
             }
             (ArtifactType::Agent, Ecosystem::Opencode) => {
-                let path = PathBuf::from(&artifact.primary_path);
-                self.edit_file(&path, artifact, action, "", |text| {
-                    set_frontmatter_flag(text, "disabled", !enable)
-                })
+                if enable {
+                    self.restore_quarantined(artifact)
+                } else {
+                    self.quarantine(artifact)
+                }
             }
             (ArtifactType::Agent, Ecosystem::Codex)
             | (ArtifactType::Agent, Ecosystem::CommandCode) => {
@@ -391,7 +370,7 @@ impl Manager {
             }
             (ArtifactType::Skill, Ecosystem::Claude) => {
                 let path = self.claude_settings(artifact.scope)?;
-                self.edit_file(&path, artifact, action, "{}", |text| {
+                self.edit_file(&path, artifact, action, expected, "{}", |text| {
                     if enable {
                         let root = jsonc_edit::parse(text)?;
                         if jsonc_edit::find(&root, &["skillOverrides"]).is_none() {
@@ -416,7 +395,7 @@ impl Manager {
                     .first()
                     .cloned()
                     .unwrap_or_else(|| artifact.primary_path.clone());
-                self.edit_file(&path, artifact, action, "", |text| {
+                self.edit_file(&path, artifact, action, expected, "", |text| {
                     let mut document = if text.trim().is_empty() {
                         DocumentMut::new()
                     } else {
@@ -458,7 +437,7 @@ impl Manager {
                     "{{\"action\":\"skill\",\"resource\":{},\"effect\":\"deny\"}}",
                     serde_json::to_string(&artifact.name).map_err(|error| error.to_string())?
                 );
-                self.edit_file(&path, artifact, action, "{}", |text| {
+                self.edit_file(&path, artifact, action, expected, "{}", |text| {
                     if enable {
                         jsonc_edit::remove_array_value(
                             text,
@@ -475,10 +454,10 @@ impl Manager {
                 })
             }
             (ArtifactType::Skill, Ecosystem::CommandCode) => {
-                let path = self.commandcode_settings()?;
+                let path = self.commandcode_settings(artifact.scope)?;
                 let name = serde_json::to_string(&artifact.name)
                     .map_err(|error| error.to_string())?;
-                self.edit_file(&path, artifact, action, "{}", |text| {
+                self.edit_file(&path, artifact, action, expected, "{}", |text| {
                     if enable {
                         jsonc_edit::remove_array_value(text, &["disabledSkills"], &name)
                     } else {
@@ -487,32 +466,56 @@ impl Manager {
                 })
             }
             (ArtifactType::Mcp, Ecosystem::Claude) => {
-                let path = self.roots().home.join(".claude.json");
-                let project = self.project_root()?;
-                let key = project.to_string_lossy().to_string();
                 let name = serde_json::to_string(&artifact.name)
                     .map_err(|error| error.to_string())?;
-                self.edit_file(&path, artifact, action, "{}", |text| {
-                    let text = jsonc_edit::ensure_object(text, &["projects"])?;
-                    let text = jsonc_edit::ensure_object(&text, &["projects", &key])?;
-                    if enable {
-                        jsonc_edit::remove_array_value(
-                            &text,
-                            &["projects", &key, "disabledMcpServers"],
-                            &name,
-                        )
-                    } else {
-                        jsonc_edit::ensure_array_contains(
-                            &text,
-                            &["projects", &key, "disabledMcpServers"],
-                            &name,
-                        )
-                    }
-                })
+                if artifact.scope == Scope::Project
+                    && artifact.primary_path.ends_with(".mcp.json")
+                {
+                    let path = self
+                        .project_root()?
+                        .join(".claude")
+                        .join("settings.local.json");
+                    self.edit_file(&path, artifact, action, expected, "{}", |text| {
+                        if enable {
+                            jsonc_edit::remove_array_value(
+                                text,
+                                &["disabledMcpjsonServers"],
+                                &name,
+                            )
+                        } else {
+                            jsonc_edit::ensure_array_contains(
+                                text,
+                                &["disabledMcpjsonServers"],
+                                &name,
+                            )
+                        }
+                    })
+                } else {
+                    let path = self.roots().home.join(".claude.json");
+                    let project = self.project_root()?;
+                    let key = project.to_string_lossy().to_string();
+                    self.edit_file(&path, artifact, action, expected, "{}", |text| {
+                        let text = jsonc_edit::ensure_object(text, &["projects"])?;
+                        let text = jsonc_edit::ensure_object(&text, &["projects", &key])?;
+                        if enable {
+                            jsonc_edit::remove_array_value(
+                                &text,
+                                &["projects", &key, "disabledMcpServers"],
+                                &name,
+                            )
+                        } else {
+                            jsonc_edit::ensure_array_contains(
+                                &text,
+                                &["projects", &key, "disabledMcpServers"],
+                                &name,
+                            )
+                        }
+                    })
+                }
             }
             (ArtifactType::Mcp, Ecosystem::Codex) => {
                 let path = PathBuf::from(&artifact.primary_path);
-                self.edit_file(&path, artifact, action, "", |text| {
+                self.edit_file(&path, artifact, action, expected, "", |text| {
                     let mut document = text
                         .parse::<DocumentMut>()
                         .map_err(|error| format!("invalid TOML: {error}"))?;
@@ -530,7 +533,7 @@ impl Manager {
             }
             (ArtifactType::Mcp, Ecosystem::Opencode) => {
                 let path = PathBuf::from(&artifact.primary_path);
-                self.edit_file(&path, artifact, action, "", |text| {
+                self.edit_file(&path, artifact, action, expected, "", |text| {
                     let segments = self.mcp_key_segments(artifact)?;
                     let refs: Vec<&str> = segments.iter().map(|value| value.as_str()).collect();
                     jsonc_edit::set_member(text, &refs, "disabled", if enable { "false" } else { "true" })
@@ -538,7 +541,7 @@ impl Manager {
             }
             (ArtifactType::Mcp, Ecosystem::CommandCode) => {
                 let path = PathBuf::from(&artifact.primary_path);
-                self.edit_file(&path, artifact, action, "", |text| {
+                self.edit_file(&path, artifact, action, expected, "", |text| {
                     jsonc_edit::set_member(
                         text,
                         &["mcpServers", &artifact.name],
@@ -590,6 +593,7 @@ impl Manager {
             let key = format!("{}|{}", path, operation);
             if seen.insert(key, ()).is_none() {
                 files.push(PlanFile {
+                    expected_hash: crate::hash::hash_file(Path::new(&path)),
                     path,
                     operation,
                     description,
@@ -644,7 +648,12 @@ impl Manager {
             ),
             (ArtifactType::Agent, Ecosystem::Opencode) => (
                 PathBuf::from(&artifact.primary_path),
-                "Add or remove disabled: true in the frontmatter".to_string(),
+                if enable {
+                    "Move the agent file back from quarantine".to_string()
+                } else {
+                    "Move the agent file to quarantine (its native flag is unverified)"
+                        .to_string()
+                },
             ),
             (ArtifactType::Agent, Ecosystem::Codex)
             | (ArtifactType::Agent, Ecosystem::CommandCode) => (
@@ -668,13 +677,26 @@ impl Manager {
                 "Add or remove the skill permission".to_string(),
             ),
             (ArtifactType::Skill, Ecosystem::CommandCode) => (
-                self.commandcode_settings()?,
+                self.commandcode_settings(artifact.scope)?,
                 "Add or remove the disabled-skills entry".to_string(),
             ),
-            (ArtifactType::Mcp, Ecosystem::Claude) => (
-                self.roots().home.join(".claude.json"),
-                "Add or remove the server from disabledMcpServers".to_string(),
-            ),
+            (ArtifactType::Mcp, Ecosystem::Claude) => {
+                if artifact.scope == Scope::Project
+                    && artifact.primary_path.ends_with(".mcp.json")
+                {
+                    (
+                        self.project_root()?
+                            .join(".claude")
+                            .join("settings.local.json"),
+                        "Add or remove the server from disabledMcpjsonServers".to_string(),
+                    )
+                } else {
+                    (
+                        self.roots().home.join(".claude.json"),
+                        "Add or remove the server from disabledMcpServers".to_string(),
+                    )
+                }
+            }
             (ArtifactType::Mcp, Ecosystem::Codex) => (
                 PathBuf::from(&artifact.primary_path),
                 "Set the server enabled flag".to_string(),
@@ -699,6 +721,7 @@ impl Manager {
             (artifact.artifact_type, ecosystem),
             (ArtifactType::Agent, Ecosystem::Codex)
                 | (ArtifactType::Agent, Ecosystem::CommandCode)
+                | (ArtifactType::Agent, Ecosystem::Opencode)
         );
         let operation = if moving { "move" } else { "update" };
         Ok((
@@ -738,6 +761,7 @@ impl Manager {
             ),
             affected_ecosystems: artifact.ecosystems.clone(),
             files: vec![PlanFile {
+                expected_hash: crate::hash::hash_file(Path::new(&target)),
                 path: target.to_string_lossy().to_string(),
                 operation: operation.to_string(),
                 description,
@@ -748,11 +772,20 @@ impl Manager {
 
     pub fn apply_plan(&self, plan: &ActionPlan) -> Result<ScanResult, String> {
         let artifact = self.find_artifact(&plan.artifact_id)?;
+        let expected: HashMap<String, String> = plan
+            .files
+            .iter()
+            .filter_map(|file| {
+                file.expected_hash
+                    .clone()
+                    .map(|hash| (file.path.clone(), hash))
+            })
+            .collect();
         match plan.action {
             ActionKind::Disable | ActionKind::Enable => {
                 let enable = plan.action == ActionKind::Enable;
                 for ecosystem in artifact.ecosystems.clone() {
-                    self.toggle_ecosystem(&artifact, ecosystem, enable)?;
+                    self.toggle_ecosystem(&artifact, ecosystem, enable, &expected)?;
                 }
             }
             ActionKind::Remove => self.remove_artifact(&artifact)?,
@@ -770,7 +803,7 @@ impl Manager {
                 return Err("The artifact changed since the last scan. Rescan.".into());
             }
         }
-        self.snapshot(&origin, "disable", artifact).ok();
+        self.snapshot(&origin, "disable", artifact)?;
         let id = short_id(&format!("{}:{}", artifact.id, origin.display()));
         let file_name = origin
             .file_name()
@@ -783,7 +816,7 @@ impl Manager {
             .join(format!("{id}-{file_name}"));
         move_path(&origin, &destination)?;
 
-        let mut entries: Vec<TrashEntry> = read_manifest(&self.trash_manifest());
+        let mut entries: Vec<TrashEntry> = read_manifest(&self.quarantine_manifest());
         entries.push(TrashEntry {
             id,
             artifact_id: artifact.id.clone(),
@@ -799,11 +832,11 @@ impl Manager {
             snapshot_path: None,
             after_hash: None,
         });
-        write_manifest(&self.trash_manifest(), &entries)
+        write_manifest(&self.quarantine_manifest(), &entries)
     }
 
     fn restore_quarantined(&self, artifact: &Artifact) -> Result<(), String> {
-        let mut entries: Vec<TrashEntry> = read_manifest(&self.trash_manifest());
+        let mut entries: Vec<TrashEntry> = read_manifest(&self.quarantine_manifest());
         let Some(entry) = entries.iter_mut().find(|entry| {
             entry.kind == "quarantine" && !entry.restored && entry.artifact_id == artifact.id
         }) else {
@@ -814,27 +847,35 @@ impl Manager {
         }
         move_path(Path::new(&entry.trashed_path), Path::new(&entry.origin_path))?;
         entry.restored = true;
-        write_manifest(&self.trash_manifest(), &entries)
+        write_manifest(&self.quarantine_manifest(), &entries)
     }
 
     fn remove_artifact(&self, artifact: &Artifact) -> Result<(), String> {
         if artifact.artifact_type == ArtifactType::Mcp {
             return self.remove_config_key(artifact);
         }
-        let origin = PathBuf::from(&artifact.primary_path);
+        let primary = PathBuf::from(&artifact.primary_path);
+        let origin = if artifact.artifact_type == ArtifactType::Skill {
+            primary
+                .parent()
+                .ok_or_else(|| "The skill directory could not be resolved.".to_string())?
+                .to_path_buf()
+        } else {
+            primary.clone()
+        };
         if !origin.exists() {
             return Err("The artifact is no longer on disk; rescan.".into());
         }
         if let Some(expected) = &artifact.content_hash {
-            if crate::hash::hash_file(&origin).as_deref() != Some(expected.as_str()) {
+            if crate::hash::hash_file(&primary).as_deref() != Some(expected.as_str()) {
                 return Err("The artifact changed since the last scan. Rescan.".into());
             }
         }
-        let snapshot = if origin.is_file() {
-            self.snapshot(&origin, "remove", artifact).ok()
+        if origin.is_file() {
+            self.snapshot(&origin, "remove", artifact)?;
         } else {
-            None
-        };
+            self.snapshot(&primary, "remove", artifact)?;
+        }
         let id = short_id(&format!("{}:{}", artifact.id, origin.display()));
         let file_name = origin
             .file_name()
@@ -860,7 +901,7 @@ impl Manager {
             timestamp: timestamp(),
             kind: "file".into(),
             restored: false,
-            snapshot_path: snapshot.map(|entry| entry.snapshot_path),
+            snapshot_path: None,
             after_hash: None,
         });
         write_manifest(&self.trash_manifest(), &entries)
@@ -918,11 +959,57 @@ impl Manager {
     }
 
     pub fn list_trash(&self) -> Vec<TrashEntry> {
-        read_manifest(&self.trash_manifest())
+        let mut entries: Vec<TrashEntry> = read_manifest(&self.trash_manifest());
+        entries.extend(read_manifest::<TrashEntry>(&self.quarantine_manifest()));
+        entries.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        entries
+    }
+
+    pub fn prune_trash(&self, ids: &[String]) -> Result<usize, String> {
+        let mut removed = 0;
+        for manifest in [self.trash_manifest(), self.quarantine_manifest()] {
+            let mut entries: Vec<TrashEntry> = read_manifest(&manifest);
+            entries.retain(|entry| {
+                if entry.restored && ids.contains(&entry.id) {
+                    if !entry.trashed_path.is_empty() {
+                        let path = Path::new(&entry.trashed_path);
+                        if path.exists() {
+                            if path.is_dir() {
+                                let _ = fs::remove_dir_all(path);
+                            } else {
+                                let _ = fs::remove_file(path);
+                            }
+                        }
+                    }
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
+            write_manifest(&manifest, &entries)?;
+        }
+        Ok(removed)
     }
 
     pub fn restore(&self, trash_id: &str) -> Result<ScanResult, String> {
-        let mut entries: Vec<TrashEntry> = read_manifest(&self.trash_manifest());
+        enum Bucket {
+            Trash,
+            Quarantine,
+        }
+        let mut trash: Vec<TrashEntry> = read_manifest(&self.trash_manifest());
+        let mut quarantine: Vec<TrashEntry> = read_manifest(&self.quarantine_manifest());
+        let bucket = if trash.iter().any(|entry| entry.id == trash_id) {
+            Bucket::Trash
+        } else if quarantine.iter().any(|entry| entry.id == trash_id) {
+            Bucket::Quarantine
+        } else {
+            return Err("That trash entry no longer exists.".into());
+        };
+        let entries = match bucket {
+            Bucket::Trash => &mut trash,
+            Bucket::Quarantine => &mut quarantine,
+        };
         let entry = entries
             .iter_mut()
             .find(|entry| entry.id == trash_id)
@@ -954,7 +1041,10 @@ impl Manager {
             move_path(Path::new(&entry.trashed_path), &origin)?;
         }
         entry.restored = true;
-        write_manifest(&self.trash_manifest(), &entries)?;
+        match bucket {
+            Bucket::Trash => write_manifest(&self.trash_manifest(), &trash),
+            Bucket::Quarantine => write_manifest(&self.quarantine_manifest(), &quarantine),
+        }?;
         Ok(self.scan())
     }
 
@@ -1295,7 +1385,14 @@ mod tests {
         );
 
         let error = manager
-            .edit_file(&agent, &artifact, "disable", "", |text| Ok(text.to_string()))
+            .edit_file(
+                &agent,
+                &artifact,
+                "disable",
+                &HashMap::new(),
+                "",
+                |text| Ok(text.to_string()),
+            )
             .unwrap_err();
         assert!(error.contains("changed since the last scan"));
     }
@@ -1320,6 +1417,167 @@ mod tests {
         let entry = manager.list_history(Some(&settings.to_string_lossy())).pop().unwrap();
         manager.rollback(&entry.snapshot_path).unwrap();
         assert!(!fs::read_to_string(&settings).unwrap().contains("Agent(reviewer)"));
+    }
+
+    #[test]
+    fn command_code_global_skills_write_the_global_settings() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        write(
+            &home.path().join(".commandcode/skills/reviewer/SKILL.md"),
+            "---\nname: reviewer\ndescription: Reviews code\n---\nBody\n",
+        );
+
+        let manager = manager(home.path(), &project);
+        let id = artifact_id(&manager, "reviewer");
+        let plan = manager.plan_toggle(&id, false).unwrap();
+        manager.apply_plan(&plan).unwrap();
+
+        assert!(home.path().join(".commandcode/settings.json").is_file());
+        assert!(!project.join(".commandcode/settings.json").is_file());
+    }
+
+    #[test]
+    fn claude_project_mcp_uses_the_project_disabled_list() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let mcp = project.join(".mcp.json");
+        write(
+            &mcp,
+            "{\n  \"mcpServers\": { \"server\": { \"command\": \"node\" } }\n}\n",
+        );
+        let settings = project.join(".claude/settings.local.json");
+        write(&settings, "{\n  // keep\n}\n");
+
+        let manager = manager(home.path(), &project);
+        let id = artifact_id(&manager, "server");
+        let plan = manager.plan_toggle(&id, false).unwrap();
+        manager.apply_plan(&plan).unwrap();
+
+        let text = fs::read_to_string(&settings).unwrap();
+        assert!(text.contains("keep"));
+        assert!(text.contains("disabledMcpjsonServers"));
+        assert!(!fs::read_to_string(&mcp).unwrap().contains("disabledMcpServers"));
+    }
+
+    #[test]
+    fn removing_a_skill_moves_the_whole_directory() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        let directory = project.join(".claude/skills/reviewer");
+        write(
+            &directory.join("SKILL.md"),
+            "---\nname: reviewer\ndescription: Reviews code\n---\nBody\n",
+        );
+        write(&directory.join("helper.txt"), "helper\n");
+
+        let manager = manager(home.path(), &project);
+        let id = artifact_id(&manager, "reviewer");
+        let plan = manager.plan_remove(&id).unwrap();
+        manager.apply_plan(&plan).unwrap();
+
+        assert!(!directory.exists());
+        let entry = manager.list_trash().pop().unwrap();
+        manager.restore(&entry.id).unwrap();
+        assert!(directory.join("helper.txt").is_file());
+    }
+
+    #[test]
+    fn apply_aborts_when_another_writer_touched_the_target() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        let settings = project.join(".claude/settings.local.json");
+        write(&settings, "{\n  \"permissions\": { \"deny\": [] }\n}\n");
+        write(
+            &project.join(".claude/agents/reviewer.md"),
+            "---\nname: reviewer\ndescription: Reviews code\n---\nBody\n",
+        );
+
+        let manager = manager(home.path(), &project);
+        let id = artifact_id(&manager, "reviewer");
+        let plan = manager.plan_toggle(&id, false).unwrap();
+        write(&settings, "{\n  // changed elsewhere\n}\n");
+
+        let error = manager.apply_plan(&plan).unwrap_err();
+        assert!(error.contains("changed since the action was planned"));
+    }
+
+    #[test]
+    fn action_payloads_round_trip_through_serde() {
+        let plan = ActionPlan {
+            action: ActionKind::Disable,
+            artifact_id: "agent:global:x".into(),
+            artifact_name: "x".into(),
+            summary: "Disable x".into(),
+            affected_ecosystems: vec![Ecosystem::Claude],
+            files: vec![PlanFile {
+                path: "C:/x".into(),
+                operation: "update".into(),
+                description: "edit".into(),
+                expected_hash: Some("abc".into()),
+            }],
+            warnings: Vec::new(),
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let back: ActionPlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.artifact_id, plan.artifact_id);
+        assert_eq!(back.files[0].expected_hash.as_deref(), Some("abc"));
+
+        let artifact = Artifact::new(
+            Ecosystem::Claude,
+            ArtifactType::Agent,
+            Scope::Global,
+            "x",
+            "C:/x.md",
+        );
+        let json = serde_json::to_string(&artifact).unwrap();
+        let back: Artifact = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "x");
+        assert_eq!(back.artifact_type, ArtifactType::Agent);
+
+        let entry = HistoryEntry {
+            id: "1".into(),
+            path: "C:/x".into(),
+            action: "disable".into(),
+            timestamp: "now".into(),
+            ecosystem: Some(Ecosystem::Claude),
+            artifact_name: Some("x".into()),
+            snapshot_path: "C:/h".into(),
+            hash: "abc".into(),
+        };
+        let back: HistoryEntry =
+            serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+        assert_eq!(back.hash, "abc");
+
+        let trash = TrashEntry {
+            id: "1".into(),
+            artifact_id: "a".into(),
+            artifact_name: "x".into(),
+            artifact_type: ArtifactType::Skill,
+            ecosystem: Ecosystem::Codex,
+            scope: Scope::Project,
+            origin_path: "C:/x".into(),
+            trashed_path: "C:/t".into(),
+            timestamp: "now".into(),
+            kind: "file".into(),
+            restored: false,
+            snapshot_path: None,
+            after_hash: None,
+        };
+        let back: TrashEntry =
+            serde_json::from_str(&serde_json::to_string(&trash).unwrap()).unwrap();
+        assert_eq!(back.artifact_type, ArtifactType::Skill);
+
+        let diff = SnapshotDiff {
+            path: "C:/x".into(),
+            snapshot: "a".into(),
+            current: "b".into(),
+            diff: "-a\n+b".into(),
+        };
+        let back: SnapshotDiff =
+            serde_json::from_str(&serde_json::to_string(&diff).unwrap()).unwrap();
+        assert_eq!(back.current, "b");
     }
 }
 

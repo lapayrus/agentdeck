@@ -4,7 +4,9 @@
 
 **Blocked by:** 11
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Removing a file-based artifact moves it to trash and it disappears from the effective list
 - [ ] Removing a configuration-key artifact deletes only that key after snapshotting the whole file

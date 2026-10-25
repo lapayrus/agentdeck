@@ -95,6 +95,7 @@ fn main() {
             commands::diff_snapshot,
             commands::rollback,
             commands::prune_snapshots,
+            commands::prune_trash,
             commands::history_for_artifact
         ])
         .run(tauri::generate_context!())

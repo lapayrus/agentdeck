@@ -4,7 +4,9 @@
 
 **Blocked by:** 04, 03
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] An ecosystem with no config root appears as a collapsed not-detected row listing the checked paths
 - [ ] A detected ecosystem shows its version, or an explicit unknown when the probe fails

@@ -4,7 +4,9 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Light, dark and system modes switch without a restart, and system mode follows the OS setting as it changes
 - [ ] The palette reads as Claude-inspired: warm off-white surfaces, a single warm accent, serif display headings, generous spacing

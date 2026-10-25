@@ -4,7 +4,9 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] All four ecosystems list skills with name, description, origin path, scope and ecosystem badges
 - [ ] Codex skills resolve from the `.agents` roots, never from `.codex`, and the fixture proves it

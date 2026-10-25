@@ -77,6 +77,7 @@ export interface PlanFile {
   path: string;
   operation: "create" | "update" | "move" | "delete";
   description: string;
+  expectedHash?: string | null;
 }
 
 export interface ActionPlan {

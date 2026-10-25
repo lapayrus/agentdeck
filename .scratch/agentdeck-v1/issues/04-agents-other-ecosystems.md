@@ -4,7 +4,9 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Each of the three ecosystems lists its agents with the same metadata and raw inspector as Claude Code
 - [ ] Codex TOML parses without rewriting the source file

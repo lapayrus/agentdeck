@@ -57,7 +57,7 @@ impl Manager {
             candidates.extend(entry_candidates);
             warnings.extend(entry_warnings);
         }
-        let artifacts = resolve::resolve(candidates, &mut warnings);
+        let artifacts = resolve::resolve(candidates);
 
         let (project_root, is_git_repository) = match &self.roots.project_root {
             Some(root) => {
@@ -537,7 +537,7 @@ mod tests {
         for entry in &claude {
             candidates.extend(source::collect(entry, None, &mut warnings));
         }
-        let artifacts = resolve::resolve(candidates, &mut warnings);
+        let artifacts = resolve::resolve(candidates);
         let shared_artifacts: Vec<_> = artifacts
             .iter()
             .filter(|artifact| artifact.name == "shared")

@@ -4,7 +4,9 @@
 
 **Blocked by:** 04, 08
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Claude Code agents disable through the native permissions denial and re-enable cleanly
 - [ ] OpenCode agents disable through their native disabled flag and re-enable cleanly

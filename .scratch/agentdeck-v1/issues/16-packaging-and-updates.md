@@ -4,7 +4,9 @@
 
 **Blocked by:** 13, 03
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] A tagged push produces a draft GitHub Release containing an MSI, an NSIS installer and the signed updater artifacts
 - [ ] The MSI installs machine-wide and the NSIS installer installs per-user

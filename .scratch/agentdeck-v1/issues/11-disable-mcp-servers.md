@@ -4,7 +4,9 @@
 
 **Blocked by:** 06, 10
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Each ecosystem's server disable writes the correct flag in the file that defines that server
 - [ ] Enabling restores the previous value and leaves every other field untouched

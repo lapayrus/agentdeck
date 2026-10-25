@@ -4,7 +4,9 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] A synthetic 10,000-file fixture across all ecosystems is generated deterministically by a script
 - [ ] Cold start, full scan and idle working set are measured and reported by the benchmark

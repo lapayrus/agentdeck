@@ -5,12 +5,14 @@ export default function TrashPanel({
   busyId,
   error,
   onRestore,
+  onForget,
   onClose,
 }: {
   entries: TrashEntry[];
   busyId: string | null;
   error: string | null;
   onRestore: (id: string) => void;
+  onForget: () => void;
   onClose: () => void;
 }) {
   return (
@@ -23,9 +25,18 @@ export default function TrashPanel({
       >
         <header className="modal-header">
           <h2>Trash and quarantine</h2>
-          <button className="button button-quiet" onClick={onClose}>
-            Close
-          </button>
+          <div className="history-actions">
+            <button
+              className="button button-quiet"
+              onClick={onForget}
+              disabled={!entries.some((entry) => entry.restored)}
+            >
+              Forget restored
+            </button>
+            <button className="button button-quiet" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </header>
         <p className="settings-hint">
           Nothing is deleted. Files can be restored to the path they came from.

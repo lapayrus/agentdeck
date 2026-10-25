@@ -4,7 +4,9 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] All four ecosystems list servers with transport, endpoint or command, enabled state, origin file and key path
 - [ ] JSON, JSONC and TOML sources are read without being rewritten

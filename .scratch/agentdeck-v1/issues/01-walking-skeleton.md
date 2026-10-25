@@ -4,7 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] The app launches on Windows and shows the shell with all four regions present
 - [ ] The core crate builds and has at least one passing test that exercises a public function

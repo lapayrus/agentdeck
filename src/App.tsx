@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import ActionDialog from "./components/ActionDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import TrashPanel from "./components/TrashPanel";
@@ -78,6 +79,7 @@ export default function App({
   const [trashBusyId, setTrashBusyId] = useState<string | null>(null);
   const [trashError, setTrashError] = useState<string | null>(null);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +215,18 @@ export default function App({
     }
   };
 
+  const forgetRestored = async () => {
+    const ids = trashEntries.filter((entry) => entry.restored).map((entry) => entry.id);
+    if (ids.length === 0) return;
+    setTrashError(null);
+    try {
+      await client.pruneTrash(ids);
+      setTrashEntries(await client.listTrash());
+    } catch (cause) {
+      setTrashError(String(cause));
+    }
+  };
+
   const confirmPlan = async () => {
     if (!plan) return;
     setActionBusy(true);
@@ -237,7 +251,12 @@ export default function App({
         : artifact.artifactType === activeTab) &&
       (!activeEcosystem ||
         artifact.ecosystems.includes(activeEcosystem) ||
-        artifact.ecosystem === activeEcosystem),
+        artifact.ecosystem === activeEcosystem) &&
+      (filter.trim() === "" ||
+        artifact.name.toLowerCase().includes(filter.trim().toLowerCase()) ||
+        (artifact.description ?? "")
+          .toLowerCase()
+          .includes(filter.trim().toLowerCase())),
   );
   const selected =
     artifacts.find((artifact) => artifact.id === selectedId) ?? null;
@@ -392,6 +411,14 @@ export default function App({
 
         <div className="workspace">
           <section className="list" aria-label="Artifacts">
+            <input
+              className="filter"
+              type="search"
+              placeholder="Filter by name"
+              aria-label="Filter artifacts by name"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
             {error ? <div className="error">{error}</div> : null}
             {scan?.warnings.map((warning) => (
               <div className="scan-warning" key={warning}>
@@ -501,6 +528,7 @@ export default function App({
           busyId={trashBusyId}
           error={trashError}
           onRestore={restoreEntry}
+          onForget={forgetRestored}
           onClose={() => setTrashOpen(false)}
         />
       ) : null}
@@ -544,7 +572,6 @@ function ArtifactDetail({
   const gated = Boolean(
     artifact.managed &&
       detection?.detected &&
-      detection.capabilities.length > 0 &&
       !detection.capabilities.includes(capability) &&
       !(quarantineAvailable && detection.capabilities.includes("disable-quarantine")),
   );
@@ -663,7 +690,7 @@ function ArtifactDetail({
           {artifact.disableMechanism ? ` · ${artifact.disableMechanism}` : ""}
         </dd>
         <dt>Reload</dt>
-        <dd>{artifact.reload}</dd>
+        <dd>{reloadLabel(artifact.reload)}</dd>
         {detection ? (
           <>
             <dt>Version</dt>
@@ -711,7 +738,29 @@ function ArtifactDetail({
           </button>
         </section>
       ) : (
-        <p className="settings-hint">Read-only in AgentDeck.</p>
+        <div className="actions">
+          <p className="settings-hint">Read-only in AgentDeck.</p>
+          <button
+            className="button button-quiet"
+            onClick={() =>
+              openPath(artifact.primaryPath).catch((cause) =>
+                setActionError(String(cause)),
+              )
+            }
+          >
+            Open
+          </button>
+          <button
+            className="button button-quiet"
+            onClick={() =>
+              revealItemInDir(artifact.primaryPath).catch((cause) =>
+                setActionError(String(cause)),
+              )
+            }
+          >
+            Reveal
+          </button>
+        </div>
       )}
       {actionError ? <div className="error">{actionError}</div> : null}
 
@@ -820,3 +869,18 @@ function ArtifactDetail({
 }
 
 export { createFakeClient };
+
+function reloadLabel(reload: Artifact["reload"]): string {
+  switch (reload) {
+    case "live":
+      return "Applies immediately";
+    case "nextTurn":
+      return "Applies on the next turn";
+    case "nextSession":
+      return "Applies in a new session";
+    case "restart":
+      return "Requires a restart";
+    default:
+      return "Reload behaviour is undocumented";
+  }
+}

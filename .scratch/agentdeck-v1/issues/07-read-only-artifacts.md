@@ -4,7 +4,9 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Hooks, slash commands, plugins and marketplaces, memory and instruction files, and settings files are listed per ecosystem with their scope and path
 - [ ] Every entry offers open in the default application and reveal in Explorer

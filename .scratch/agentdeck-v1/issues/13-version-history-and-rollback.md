@@ -4,7 +4,9 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Every write performed by the app appears in history with timestamp, action and affected file
 - [ ] A snapshot can be compared with the current file, with added, removed and changed lines visible

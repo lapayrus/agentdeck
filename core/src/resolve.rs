@@ -24,7 +24,7 @@ fn scope_label(scope: crate::model::Scope) -> &'static str {
     }
 }
 
-pub fn resolve(candidates: Vec<Candidate>, warnings: &mut Vec<String>) -> Vec<Artifact> {
+pub fn resolve(candidates: Vec<Candidate>) -> Vec<Artifact> {
     let mut groups: HashMap<(Ecosystem, ArtifactType, String), Vec<Candidate>> = HashMap::new();
     for candidate in candidates {
         groups
@@ -51,6 +51,14 @@ pub fn resolve(candidates: Vec<Candidate>, warnings: &mut Vec<String>) -> Vec<Ar
                     "Another definition in the same scope also uses the name \"{}\"; the winner is not deterministic.",
                     winner.artifact.name
                 ));
+            }
+            if winner.artifact.ecosystem == Ecosystem::Codex
+                && winner.artifact.artifact_type == ArtifactType::Agent
+            {
+                let warning = "Codex does not document which scope wins when two agents share a name; AgentDeck shows the project definition.";
+                if !winner.artifact.warnings.iter().any(|entry| entry == warning) {
+                    winner.artifact.warnings.push(warning.into());
+                }
             }
             winner.artifact.shadowed.push(ShadowedArtifact {
                 name: loser.artifact.name,
@@ -120,9 +128,6 @@ pub fn resolve(candidates: Vec<Candidate>, warnings: &mut Vec<String>) -> Vec<Ar
                 .unwrap_or(usize::MAX)
         });
         artifact.ecosystems.dedup();
-        if artifact.warnings.is_empty() {
-            // keep the field present for the view layer
-        }
     }
     artifacts.sort_by(|left, right| {
         type_order(left.artifact_type)
@@ -130,12 +135,6 @@ pub fn resolve(candidates: Vec<Candidate>, warnings: &mut Vec<String>) -> Vec<Ar
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
             .then_with(|| left.primary_path.cmp(&right.primary_path))
     });
-
-    if artifacts.is_empty() {
-        // no-op; an empty result is legitimate
-    } else {
-        warnings.retain(|warning| !warning.is_empty());
-    }
 
     artifacts
 }

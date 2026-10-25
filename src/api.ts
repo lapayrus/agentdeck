@@ -4,7 +4,6 @@ import type {
   ActionPlan,
   AppSettings,
   Artifact,
-  Ecosystem,
   HistoryEntry,
   ScanRequest,
   ScanResult,
@@ -24,15 +23,12 @@ export interface CommandClient {
   diffSnapshot(snapshotPath: string): Promise<SnapshotDiff>;
   rollback(snapshotPath: string): Promise<ActionResult>;
   pruneSnapshots(ids: string[]): Promise<number>;
+  pruneTrash(ids: string[]): Promise<number>;
   getSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<AppSettings>;
   setProject(projectRoot: string | null): Promise<ScanResult>;
-  detect(projectRoot?: string | null): Promise<ScanResult>;
-  openPath(path: string): Promise<void>;
-  revealPath(path: string): Promise<void>;
   readFile(path: string): Promise<string>;
   historyForArtifact(artifactId: string): Promise<HistoryEntry[]>;
-  disableForEcosystem(artifactId: string, ecosystems: Ecosystem[]): Promise<ActionResult>;
 }
 
 export const tauriClient: CommandClient = {
@@ -51,20 +47,15 @@ export const tauriClient: CommandClient = {
   rollback: (snapshotPath) =>
     invoke<ActionResult>("rollback", { snapshotPath }),
   pruneSnapshots: (ids) => invoke<number>("prune_snapshots", { ids }),
+  pruneTrash: (ids) => invoke<number>("prune_trash", { ids }),
   getSettings: () => invoke<AppSettings>("get_settings"),
   saveSettings: (settings) =>
     invoke<AppSettings>("save_settings", { settings }),
   setProject: (projectRoot) =>
     invoke<ScanResult>("set_project", { projectRoot }),
-  detect: (projectRoot) =>
-    invoke<ScanResult>("detect", { projectRoot: projectRoot ?? null }),
-  openPath: (path) => invoke<void>("open_path", { path }),
-  revealPath: (path) => invoke<void>("reveal_path", { path }),
   readFile: (path) => invoke<string>("read_file", { path }),
   historyForArtifact: (artifactId) =>
     invoke<HistoryEntry[]>("history_for_artifact", { artifactId }),
-  disableForEcosystem: (artifactId, ecosystems) =>
-    invoke<ActionResult>("disable_for_ecosystem", { artifactId, ecosystems }),
 };
 
 export function createFakeClient(
@@ -105,6 +96,7 @@ export function createFakeClient(
       throw new Error("not implemented");
     },
     pruneSnapshots: async () => 0,
+    pruneTrash: async () => 0,
     getSettings: async () => ({
       theme: "system",
       checkForUpdates: true,
@@ -114,14 +106,8 @@ export function createFakeClient(
     }),
     saveSettings: async (settings) => settings,
     setProject: async () => emptyScan,
-    detect: async () => emptyScan,
-    openPath: async () => {},
-    revealPath: async () => {},
     readFile: async () => "",
     historyForArtifact: async () => [],
-    disableForEcosystem: async () => {
-      throw new Error("not implemented");
-    },
   };
   return { ...base, ...overrides };
 }

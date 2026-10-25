@@ -118,7 +118,10 @@ fn scan_with(state: &AppState, project: Option<PathBuf>) -> ScanResult {
 }
 
 #[tauri::command]
-pub fn scan(request: Option<ScanRequest>, state: State<AppState>) -> Result<ScanResult, String> {
+pub async fn scan(
+    request: Option<ScanRequest>,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
     let project = request
         .and_then(|value| value.project_root)
         .map(PathBuf::from)
@@ -127,10 +130,10 @@ pub fn scan(request: Option<ScanRequest>, state: State<AppState>) -> Result<Scan
 }
 
 #[tauri::command]
-pub fn set_project(
+pub async fn set_project(
     project_root: Option<String>,
-    state: State<AppState>,
-    watcher: State<WatcherState>,
+    state: State<'_, AppState>,
+    watcher: State<'_, WatcherState>,
     app: AppHandle,
 ) -> Result<ScanResult, String> {
     let resolved = match project_root {
@@ -205,7 +208,7 @@ pub fn save_settings(
 const MAX_RAW_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 #[tauri::command]
-pub fn read_file(path: String, state: State<AppState>) -> Result<String, String> {
+pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<String, String> {
     let target = PathBuf::from(&path);
     if !is_allowed(&target, &state) {
         return Err("That file is outside the folders AgentDeck is allowed to read.".into());
@@ -222,27 +225,20 @@ fn is_allowed(target: &Path, state: &AppState) -> bool {
     let Ok(candidate) = fs::canonicalize(target) else {
         return false;
     };
-    if let Some(home) = dirs_home() {
-        if let Ok(home) = fs::canonicalize(home) {
-            if candidate.starts_with(home) {
+    let roots = Roots::discover(state.project_snapshot());
+    for path in agentdeck_core::source::watch_paths(&roots) {
+        let Ok(watched) = fs::canonicalize(&path) else {
+            continue;
+        };
+        if watched.is_dir() {
+            if candidate.starts_with(&watched) {
                 return true;
             }
-        }
-    }
-    if let Some(project) = state.project_snapshot() {
-        if let Ok(project) = fs::canonicalize(project) {
-            if candidate.starts_with(project) {
-                return true;
-            }
+        } else if candidate == watched {
+            return true;
         }
     }
     false
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
 }
 
 fn manager_for(state: &AppState) -> Manager {
@@ -250,28 +246,37 @@ fn manager_for(state: &AppState) -> Manager {
 }
 
 #[tauri::command]
-pub fn plan_toggle(
+pub async fn plan_toggle(
     artifact_id: String,
     enabled: bool,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<ActionPlan, String> {
     manager_for(&state).plan_toggle(&artifact_id, enabled)
 }
 
 #[tauri::command]
-pub fn plan_remove(artifact_id: String, state: State<AppState>) -> Result<ActionPlan, String> {
+pub async fn plan_remove(
+    artifact_id: String,
+    state: State<'_, AppState>,
+) -> Result<ActionPlan, String> {
     manager_for(&state).plan_remove(&artifact_id)
 }
 
 #[tauri::command]
-pub fn apply_plan(plan: ActionPlan, state: State<AppState>) -> Result<ActionResult, String> {
+pub async fn apply_plan(
+    plan: ActionPlan,
+    state: State<'_, AppState>,
+) -> Result<ActionResult, String> {
     let manager = manager_for(&state);
     let scan = manager.apply_plan(&plan)?;
     Ok(ActionResult { plan, scan })
 }
 
 #[tauri::command]
-pub fn restore(trash_id: String, state: State<AppState>) -> Result<ActionResult, String> {
+pub async fn restore(
+    trash_id: String,
+    state: State<'_, AppState>,
+) -> Result<ActionResult, String> {
     let manager = manager_for(&state);
     let entries = manager.list_trash();
     let entry = entries
@@ -288,6 +293,7 @@ pub fn restore(trash_id: String, state: State<AppState>) -> Result<ActionResult,
             path: entry.origin_path.clone(),
             operation: "move".into(),
             description: "Move the artifact back to its original path".into(),
+            expected_hash: None,
         }],
         warnings: Vec::new(),
     };
@@ -319,7 +325,10 @@ pub fn diff_snapshot(
 }
 
 #[tauri::command]
-pub fn rollback(snapshot_path: String, state: State<AppState>) -> Result<ActionResult, String> {
+pub async fn rollback(
+    snapshot_path: String,
+    state: State<'_, AppState>,
+) -> Result<ActionResult, String> {
     let manager = manager_for(&state);
     let scan = manager.rollback(&snapshot_path)?;
     let plan = ActionPlan {
@@ -337,6 +346,11 @@ pub fn rollback(snapshot_path: String, state: State<AppState>) -> Result<ActionR
 #[tauri::command]
 pub fn prune_snapshots(ids: Vec<String>, state: State<AppState>) -> Result<usize, String> {
     manager_for(&state).prune_snapshots(&ids)
+}
+
+#[tauri::command]
+pub fn prune_trash(ids: Vec<String>, state: State<AppState>) -> Result<usize, String> {
+    manager_for(&state).prune_trash(&ids)
 }
 
 #[tauri::command]

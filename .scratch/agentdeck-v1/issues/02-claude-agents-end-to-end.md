@@ -4,7 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Resolution:** Implemented on integration/agentdeck-v1.
 
 - [ ] Selecting a folder resolves and displays the project root, with a badge when it is not a git repository
 - [ ] Recents persist across restarts and reopen a project in one click
