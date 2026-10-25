@@ -9,6 +9,8 @@ pub struct Roots {
     pub app_data: PathBuf,
     pub project_root: Option<PathBuf>,
     pub overrides: HashMap<Ecosystem, PathBuf>,
+    pub binaries: HashMap<Ecosystem, PathBuf>,
+    pub version_overrides: HashMap<Ecosystem, String>,
 }
 
 impl Roots {
@@ -18,6 +20,8 @@ impl Roots {
             app_data,
             project_root,
             overrides: HashMap::new(),
+            binaries: HashMap::new(),
+            version_overrides: HashMap::new(),
         }
     }
 

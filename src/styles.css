@@ -119,6 +119,36 @@ button {
   background: var(--surface);
 }
 
+.rail-item[data-active="true"] {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.rail-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-paths {
+  margin: 2px 10px 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.rail-paths p {
+  margin: 0 0 6px;
+}
+
+.rail-paths ul {
+  margin: 0;
+  padding-left: 14px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  overflow-wrap: anywhere;
+}
+
 .rail-item .dot {
   width: 7px;
   height: 7px;

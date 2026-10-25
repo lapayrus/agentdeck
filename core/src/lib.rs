@@ -1,3 +1,4 @@
+pub mod detect;
 pub mod jsonc;
 pub mod model;
 pub mod parser;
@@ -21,6 +22,10 @@ impl Manager {
 
     pub fn roots(&self) -> &Roots {
         &self.roots
+    }
+
+    pub fn roots_mut(&mut self) -> &mut Roots {
+        &mut self.roots
     }
 
     pub fn scan(&self) -> ScanResult {
@@ -62,20 +67,22 @@ impl Manager {
     fn detect(&self, ecosystem: Ecosystem) -> EcosystemDetection {
         let root = self.roots.ecosystem_root(ecosystem);
         let detected = root.exists();
+        let version = if detected {
+            detect::probe(ecosystem, &self.roots)
+        } else {
+            None
+        };
+        let capabilities = detect::capabilities(ecosystem, version.as_deref());
         let mut checked_paths = vec![root.to_string_lossy().to_string()];
         if ecosystem == Ecosystem::Claude {
-            checked_paths.push(
-                root.join("agents")
-                    .to_string_lossy()
-                    .to_string(),
-            );
+            checked_paths.push(root.join("agents").to_string_lossy().to_string());
         }
         EcosystemDetection {
             ecosystem,
             detected,
-            version: None,
+            version,
             checked_paths,
-            capabilities: Vec::new(),
+            capabilities,
             reason: if detected {
                 None
             } else {
@@ -127,6 +134,40 @@ mod tests {
             .collect();
 
         assert_eq!(detected, vec![Ecosystem::Claude, Ecosystem::Opencode]);
+    }
+
+    #[test]
+    fn reports_a_version_and_capabilities_for_a_detected_ecosystem() {
+        let home = tempdir().unwrap();
+        fs::create_dir_all(home.path().join(".claude")).unwrap();
+        let mut manager = manager(home.path(), None);
+        manager
+            .roots_mut()
+            .version_overrides
+            .insert(Ecosystem::Claude, "2.1.215".into());
+
+        let result = manager.scan();
+        let claude = result
+            .detections
+            .iter()
+            .find(|entry| entry.ecosystem == Ecosystem::Claude)
+            .unwrap();
+
+        assert_eq!(claude.version.as_deref(), Some("2.1.215"));
+        assert!(claude.capabilities.iter().any(|value| value == "disable-agent"));
+    }
+
+    #[test]
+    fn an_undetected_ecosystem_has_no_capabilities() {
+        let home = tempdir().unwrap();
+        let result = manager(home.path(), None).scan();
+        let codex = result
+            .detections
+            .iter()
+            .find(|entry| entry.ecosystem == Ecosystem::Codex)
+            .unwrap();
+
+        assert!(codex.capabilities.is_empty());
     }
 
     #[test]

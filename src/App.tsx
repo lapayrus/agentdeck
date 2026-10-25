@@ -7,6 +7,7 @@ import type {
   Artifact,
   ArtifactType,
   Ecosystem,
+  EcosystemDetection,
   ScanResult,
   Scope,
 } from "./types";
@@ -57,6 +58,10 @@ export default function App({
   const [error, setError] = useState<string | null>(null);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedEcosystem, setExpandedEcosystem] = useState<Ecosystem | null>(
+    null,
+  );
+  const [activeEcosystem, setActiveEcosystem] = useState<Ecosystem | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,7 +139,10 @@ export default function App({
       artifact.scope === activeScope &&
       (activeTab === "hook"
         ? isOtherType(artifact.artifactType)
-        : artifact.artifactType === activeTab),
+        : artifact.artifactType === activeTab) &&
+      (!activeEcosystem ||
+        artifact.ecosystems.includes(activeEcosystem) ||
+        artifact.ecosystem === activeEcosystem),
   );
   const selected =
     artifacts.find((artifact) => artifact.id === selectedId) ?? null;
@@ -153,22 +161,44 @@ export default function App({
           const detection = scan?.detections.find(
             (entry) => entry.ecosystem === ecosystem.id,
           );
+          const expanded = expandedEcosystem === ecosystem.id;
           return (
-            <button
-              key={ecosystem.id}
-              className="rail-item"
-              data-detected={detection?.detected ?? false}
-            >
-              <span className="dot" />
-              <span>{ecosystem.label}</span>
-              <span className="rail-meta">
-                {detection?.detected
-                  ? detection.version ?? "detected"
-                  : detection
-                    ? "not found"
-                    : ""}
-              </span>
-            </button>
+            <div className="rail-group" key={ecosystem.id}>
+              <button
+                className="rail-item"
+                data-detected={detection?.detected ?? false}
+                data-active={activeEcosystem === ecosystem.id}
+                onClick={() => {
+                  if (detection?.detected) {
+                    setActiveEcosystem((current) =>
+                      current === ecosystem.id ? null : ecosystem.id,
+                    );
+                  } else {
+                    setExpandedEcosystem(expanded ? null : ecosystem.id);
+                  }
+                }}
+              >
+                <span className="dot" />
+                <span>{ecosystem.label}</span>
+                <span className="rail-meta">
+                  {detection?.detected
+                    ? detection.version ?? "detected"
+                    : detection
+                      ? "not found"
+                      : ""}
+                </span>
+              </button>
+              {expanded && detection && !detection.detected ? (
+                <div className="rail-paths">
+                  <p>{detection.reason}</p>
+                  <ul>
+                    {detection.checkedPaths.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
           );
         })}
         <div className="rail-footer">
@@ -313,7 +343,13 @@ export default function App({
 
           <aside className="detail">
             {selected ? (
-              <ArtifactDetail artifact={selected} client={client} />
+              <ArtifactDetail
+                artifact={selected}
+                client={client}
+                detection={scan?.detections.find(
+                  (entry) => entry.ecosystem === selected.ecosystem,
+                )}
+              />
             ) : (
               <div className="empty">
                 <p className="empty-title">Select an artifact</p>
@@ -340,9 +376,11 @@ export default function App({
 function ArtifactDetail({
   artifact,
   client,
+  detection,
 }: {
   artifact: Artifact;
   client: CommandClient;
+  detection?: EcosystemDetection;
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const [raw, setRaw] = useState<Record<string, string>>({});
@@ -391,7 +429,27 @@ function ArtifactDetail({
         </dd>
         <dt>Reload</dt>
         <dd>{artifact.reload}</dd>
+        {detection ? (
+          <>
+            <dt>Version</dt>
+            <dd>{detection.version ?? "unknown"}</dd>
+            <dt>Capabilities</dt>
+            <dd>
+              {detection.capabilities.length > 0
+                ? detection.capabilities.join(", ")
+                : "unavailable"}
+            </dd>
+          </>
+        ) : null}
       </dl>
+
+      {detection?.detected && detection.capabilities.length === 0 && artifact.managed ? (
+        <p className="warning">
+          The installed {artifact.ecosystem} version could not be read, so
+          actions that depend on it are unavailable. Set the binary path in
+          Settings.
+        </p>
+      ) : null}
 
       {artifact.warnings.map((warning) => (
         <p className="warning" key={warning}>

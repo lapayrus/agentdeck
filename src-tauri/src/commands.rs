@@ -56,7 +56,7 @@ fn build_manager(state: &AppState, project: Option<PathBuf>) -> Manager {
     let mut roots = Roots::discover(project);
     for (key, value) in &settings.binary_overrides {
         if let Some(ecosystem) = parse_ecosystem(key) {
-            roots.overrides.insert(ecosystem, PathBuf::from(value));
+            roots.binaries.insert(ecosystem, PathBuf::from(value));
         }
     }
     Manager::new(roots)
