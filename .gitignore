@@ -7,3 +7,7 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 .commandcode/
+
+vite.config.js
+vite.config.d.ts
+*.tsbuildinfo
