@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { createFakeClient } from "./api";
+import type { AppSettings } from "./types";
 
 describe("App shell", () => {
   it("renders the four ecosystems and the artifact tabs", async () => {
@@ -34,5 +35,39 @@ describe("App shell", () => {
       />,
     );
     expect(await screen.findByText("not a git repository")).toBeInTheDocument();
+  });
+
+  it("persists a theme change and applies it immediately", async () => {
+    const saved: AppSettings[] = [];
+    const settings: AppSettings = {
+      theme: "dark",
+      checkForUpdates: true,
+      recentProjects: [],
+      binaryOverrides: {},
+      window: { x: null, y: null, width: 1280, height: 820 },
+    };
+    render(
+      <App
+        client={createFakeClient({
+          getSettings: async () => settings,
+          saveSettings: vi.fn(async (next: AppSettings) => {
+            saved.push(next);
+            return next;
+          }),
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("dark"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light" }));
+
+    await waitFor(() => expect(saved.at(-1)?.theme).toBe("light"));
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("light"),
+    );
   });
 });

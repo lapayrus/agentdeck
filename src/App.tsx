@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import SettingsPanel from "./components/SettingsPanel";
 import { createFakeClient, tauriClient, type CommandClient } from "./api";
 import type {
   AppSettings,
@@ -55,6 +56,7 @@ export default function App({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentsOpen, setRecentsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +121,11 @@ export default function App({
     } catch (cause) {
       setError(String(cause));
     }
+  };
+
+  const saveSettings = async (next: AppSettings) => {
+    const saved = await client.saveSettings(next);
+    setSettings(saved);
   };
 
   const artifacts = scan?.artifacts ?? [];
@@ -209,6 +216,12 @@ export default function App({
             </button>
             <button className="button button-quiet" onClick={refresh}>
               Refresh
+            </button>
+            <button
+              className="button button-quiet"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Settings
             </button>
           </div>
         </header>
@@ -312,6 +325,14 @@ export default function App({
           </aside>
         </div>
       </main>
+
+      {settingsOpen && settings ? (
+        <SettingsPanel
+          settings={settings}
+          onSave={saveSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
