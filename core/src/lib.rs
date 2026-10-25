@@ -262,7 +262,7 @@ mod tests {
         assert!(result.artifacts[0]
             .warnings
             .iter()
-            .any(|warning| warning.contains("no description")));
+            .any(|warning| warning.to_lowercase().contains("no description")));
     }
 
     #[test]
@@ -297,5 +297,194 @@ mod tests {
             .find(|artifact| artifact.name == "nested-agent")
             .unwrap();
         assert_eq!(nested_agent.scope, model::Scope::Project);
+    }
+
+    fn write_toml_agent(path: &Path, name: &str, description: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            format!(
+                "name = \"{name}\"\ndescription = \"{description}\"\ndeveloper_instructions = \"Do the work\"\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn lists_codex_agents_and_lets_the_project_definition_win() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        write_toml_agent(
+            &home.path().join(".codex/agents/reviewer.toml"),
+            "reviewer",
+            "Global reviewer",
+        );
+        write_toml_agent(
+            &project.join(".codex/agents/reviewer.toml"),
+            "reviewer",
+            "Project reviewer",
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let reviewer: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "reviewer")
+            .collect();
+
+        assert_eq!(reviewer.len(), 1);
+        assert_eq!(reviewer[0].ecosystem, Ecosystem::Codex);
+        assert_eq!(reviewer[0].scope, model::Scope::Project);
+        assert_eq!(reviewer[0].shadowed.len(), 1);
+    }
+
+    #[test]
+    fn codex_agents_skip_a_toml_without_a_name() {
+        let home = tempdir().unwrap();
+        let agents = home.path().join(".codex/agents");
+        fs::create_dir_all(&agents).unwrap();
+        fs::write(agents.join("broken.toml"), "description = \"No name\"\n").unwrap();
+
+        let result = manager(home.path(), None).scan();
+        assert!(result.artifacts.is_empty());
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("broken.toml")));
+    }
+
+    #[test]
+    fn lists_opencode_agents_and_lets_the_project_definition_win() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        write_agent(
+            &home.path().join(".config/opencode/agents/reviewer.md"),
+            "reviewer",
+            Some("Global reviewer"),
+        );
+        write_agent(
+            &project.join(".opencode/agents/reviewer.md"),
+            "reviewer",
+            Some("Project reviewer"),
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let reviewer: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "reviewer")
+            .collect();
+
+        assert_eq!(reviewer.len(), 1);
+        assert_eq!(reviewer[0].ecosystem, Ecosystem::Opencode);
+        assert_eq!(reviewer[0].scope, model::Scope::Project);
+        assert_eq!(reviewer[0].shadowed.len(), 1);
+    }
+
+    #[test]
+    fn opencode_agents_without_a_description_are_skipped() {
+        let home = tempdir().unwrap();
+        write_agent(
+            &home.path().join(".config/opencode/agents/silent.md"),
+            "silent",
+            None,
+        );
+
+        let result = manager(home.path(), None).scan();
+        assert!(result.artifacts.is_empty());
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("missing description")));
+    }
+
+    #[test]
+    fn command_code_personal_agents_shadow_project_agents() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        write_agent(
+            &home.path().join(".commandcode/agents/reviewer.md"),
+            "reviewer",
+            Some("Personal reviewer"),
+        );
+        write_agent(
+            &project.join(".commandcode/agents/reviewer.md"),
+            "reviewer",
+            Some("Project reviewer"),
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let reviewer: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "reviewer")
+            .collect();
+
+        assert_eq!(reviewer.len(), 1);
+        assert_eq!(reviewer[0].ecosystem, Ecosystem::CommandCode);
+        assert_eq!(reviewer[0].scope, model::Scope::Global);
+        assert_eq!(reviewer[0].shadowed[0].scope, model::Scope::Project);
+    }
+
+    #[test]
+    fn command_code_reserved_agent_names_are_skipped() {
+        let home = tempdir().unwrap();
+        write_agent(
+            &home.path().join(".commandcode/agents/plan.md"),
+            "plan",
+            Some("Reserved name"),
+        );
+
+        let result = manager(home.path(), None).scan();
+        assert!(result.artifacts.is_empty());
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("reserved")));
+    }
+
+    #[test]
+    fn agents_loaded_from_one_path_by_several_ecosystems_appear_once() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        let shared = project.join(".agents/agents");
+        write_agent(&shared.join("shared.md"), "shared", Some("Shared agent"));
+
+        let mut claude = vec![source::Source {
+            ecosystem: Ecosystem::Claude,
+            artifact_type: model::ArtifactType::Agent,
+            scope: model::Scope::Project,
+            root: shared.clone(),
+            layout: source::Layout::FilesRecursive,
+            format: source::Format::MarkdownAgent,
+            rank: 0,
+            reload: model::ReloadHint::Live,
+            disable_mechanism: None,
+        }];
+        claude.push(source::Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: model::ArtifactType::Agent,
+            scope: model::Scope::Project,
+            root: shared.clone(),
+            layout: source::Layout::FilesRecursive,
+            format: source::Format::MarkdownAgent,
+            rank: 0,
+            reload: model::ReloadHint::Restart,
+            disable_mechanism: None,
+        });
+
+        let mut warnings = Vec::new();
+        let mut candidates = Vec::new();
+        for entry in &claude {
+            candidates.extend(source::collect(entry, &mut warnings));
+        }
+        let artifacts = resolve::resolve(candidates, &mut warnings);
+        let shared_artifacts: Vec<_> = artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "shared")
+            .collect();
+
+        assert_eq!(shared_artifacts.len(), 1);
+        assert_eq!(shared_artifacts[0].ecosystems.len(), 2);
     }
 }
