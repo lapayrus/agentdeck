@@ -1,3 +1,4 @@
+pub mod jsonc;
 pub mod model;
 pub mod parser;
 pub mod resolve;
@@ -32,7 +33,11 @@ impl Manager {
         let sources = source::sources(&self.roots);
         let mut candidates = Vec::new();
         for source in &sources {
-            candidates.extend(source::collect(source, &mut warnings));
+            candidates.extend(source::collect(
+                source,
+                self.roots.project_root.as_deref(),
+                &mut warnings,
+            ));
         }
         let artifacts = resolve::resolve(candidates, &mut warnings);
 
@@ -476,7 +481,7 @@ mod tests {
         let mut warnings = Vec::new();
         let mut candidates = Vec::new();
         for entry in &claude {
-            candidates.extend(source::collect(entry, &mut warnings));
+            candidates.extend(source::collect(entry, None, &mut warnings));
         }
         let artifacts = resolve::resolve(candidates, &mut warnings);
         let shared_artifacts: Vec<_> = artifacts
@@ -576,5 +581,137 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("missing description")));
+    }
+
+    fn write_json(path: &Path, value: serde_json::Value) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn claude_mcp_prefers_the_project_local_definition() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let project_key = project.to_string_lossy().to_string();
+
+        write_json(
+            &home.path().join(".claude.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "shared": { "command": "global-cmd" }
+                },
+                "projects": {
+                    project_key: {
+                        "mcpServers": {
+                            "shared": { "command": "local-cmd" }
+                        },
+                        "disabledMcpServers": []
+                    }
+                }
+            }),
+        );
+        write_json(
+            &project.join(".mcp.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "shared": { "command": "project-cmd" }
+                }
+            }),
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let shared: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| {
+                artifact.name == "shared" && artifact.ecosystem == Ecosystem::Claude
+            })
+            .collect();
+
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared[0].artifact_type, model::ArtifactType::Mcp);
+        assert_eq!(shared[0].scope, model::Scope::ProjectLocal);
+        assert_eq!(shared[0].command.as_deref(), Some("local-cmd"));
+        assert_eq!(shared[0].shadowed.len(), 2);
+    }
+
+    #[test]
+    fn reads_opencode_jsonc_mcp_servers_without_losing_comments() {
+        let home = tempdir().unwrap();
+        let path = home.path().join(".config/opencode/opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "{\n  // servers\n  \"mcp\": {\n    \"servers\": {\n      \"remote\": {\n        \"type\": \"remote\",\n        \"url\": \"https://example.test/mcp\",\n        \"disabled\": true\n      }\n    }\n  }\n}\n",
+        )
+        .unwrap();
+
+        let result = manager(home.path(), None).scan();
+        let remote: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "remote")
+            .collect();
+
+        assert_eq!(remote.len(), 1);
+        assert_eq!(remote[0].ecosystem, Ecosystem::Opencode);
+        assert_eq!(remote[0].transport.as_deref(), Some("http"));
+        assert_eq!(remote[0].enabled, Some(false));
+    }
+
+    #[test]
+    fn reads_codex_mcp_servers_from_toml() {
+        let home = tempdir().unwrap();
+        let path = home.path().join(".codex/config.toml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "[mcp_servers.repl]\ncommand = \"node\"\nargs = [\"repl.js\"]\nenabled = false\n",
+        )
+        .unwrap();
+
+        let result = manager(home.path(), None).scan();
+        let repl: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "repl")
+            .collect();
+
+        assert_eq!(repl.len(), 1);
+        assert_eq!(repl[0].ecosystem, Ecosystem::Codex);
+        assert_eq!(repl[0].command.as_deref(), Some("node repl.js"));
+        assert_eq!(repl[0].enabled, Some(false));
+    }
+
+    #[test]
+    fn finds_command_code_project_local_mcp_by_slug() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project").join("nested");
+        fs::create_dir_all(&project).unwrap();
+        let slug = source::project_slug(&project);
+        write_json(
+            &home.path()
+                .join(".commandcode")
+                .join("projects")
+                .join(slug)
+                .join("mcp.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "local": { "command": "local-server" }
+                }
+            }),
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let local: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "local")
+            .collect();
+
+        assert_eq!(local.len(), 1);
+        assert_eq!(local[0].scope, model::Scope::ProjectLocal);
+        assert_eq!(local[0].ecosystem, Ecosystem::CommandCode);
     }
 }

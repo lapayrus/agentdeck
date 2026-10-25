@@ -441,6 +441,192 @@ pub fn commandcode_skill_sources(roots: &Roots) -> Vec<Source> {
     sources
 }
 
+pub fn mcp_sources(roots: &Roots) -> Vec<Source> {
+    let mut sources = Vec::new();
+    let claude_config = roots.home.join(".claude.json");
+    sources.push(Source {
+        ecosystem: Ecosystem::Claude,
+        artifact_type: ArtifactType::Mcp,
+        scope: Scope::Global,
+        root: claude_config.clone(),
+        layout: Layout::ConfigFile,
+        format: Format::McpJson,
+        rank: 20,
+        reload: ReloadHint::NextSession,
+        disable_mechanism: Some("disabledMcpServers".into()),
+    });
+    sources.push(Source {
+        ecosystem: Ecosystem::Claude,
+        artifact_type: ArtifactType::Mcp,
+        scope: Scope::ProjectLocal,
+        root: claude_config,
+        layout: Layout::ConfigFile,
+        format: Format::McpJson,
+        rank: 0,
+        reload: ReloadHint::NextSession,
+        disable_mechanism: Some("disabledMcpServers".into()),
+    });
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::Claude,
+            artifact_type: ArtifactType::Mcp,
+            scope: Scope::Project,
+            root: directory.join(".mcp.json"),
+            layout: Layout::ConfigFile,
+            format: Format::McpJson,
+            rank: 10 + rank * 10,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("disabledMcpjsonServers".into()),
+        });
+    }
+
+    sources.push(Source {
+        ecosystem: Ecosystem::Codex,
+        artifact_type: ArtifactType::Mcp,
+        scope: Scope::Global,
+        root: roots.home.join(".codex").join("config.toml"),
+        layout: Layout::ConfigFile,
+        format: Format::McpToml,
+        rank: 100,
+        reload: ReloadHint::Restart,
+        disable_mechanism: Some("enabled = false".into()),
+    });
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: ArtifactType::Mcp,
+            scope: Scope::Project,
+            root: directory.join(".codex").join("config.toml"),
+            layout: Layout::ConfigFile,
+            format: Format::McpToml,
+            rank: rank * 10,
+            reload: ReloadHint::Restart,
+            disable_mechanism: Some("enabled = false".into()),
+        });
+    }
+
+    let opencode = roots.home.join(".config").join("opencode");
+    for (name, rank) in [("opencode.json", 20u32), ("opencode.jsonc", 21u32)] {
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Mcp,
+            scope: Scope::Global,
+            root: opencode.join(name),
+            layout: Layout::ConfigFile,
+            format: Format::McpJson,
+            rank,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("disabled: true".into()),
+        });
+    }
+    for (directory, rank) in project_layers(roots) {
+        for (name, offset) in [
+            ("opencode.json", 10u32),
+            ("opencode.jsonc", 11u32),
+        ] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Opencode,
+                artifact_type: ArtifactType::Mcp,
+                scope: Scope::Project,
+                root: directory.join(name),
+                layout: Layout::ConfigFile,
+                format: Format::McpJson,
+                rank: rank * 100 + offset,
+                reload: ReloadHint::NextSession,
+                disable_mechanism: Some("disabled: true".into()),
+            });
+        }
+        for (name, offset) in [
+            ("opencode.json", 0u32),
+            ("opencode.jsonc", 1u32),
+        ] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Opencode,
+                artifact_type: ArtifactType::Mcp,
+                scope: Scope::Project,
+                root: directory.join(".opencode").join(name),
+                layout: Layout::ConfigFile,
+                format: Format::McpJson,
+                rank: rank * 100 + offset,
+                reload: ReloadHint::NextSession,
+                disable_mechanism: Some("disabled: true".into()),
+            });
+        }
+    }
+
+    sources.push(Source {
+        ecosystem: Ecosystem::CommandCode,
+        artifact_type: ArtifactType::Mcp,
+        scope: Scope::Global,
+        root: roots.home.join(".commandcode").join("mcp.json"),
+        layout: Layout::ConfigFile,
+        format: Format::McpJson,
+        rank: 20,
+        reload: ReloadHint::NextSession,
+        disable_mechanism: Some("enabled: false".into()),
+    });
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Mcp,
+            scope: Scope::Project,
+            root: directory.join(".mcp.json"),
+            layout: Layout::ConfigFile,
+            format: Format::McpJson,
+            rank: 10 + rank * 10,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("enabled: false".into()),
+        });
+    }
+    if let Some(project) = &roots.project_root {
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Mcp,
+            scope: Scope::ProjectLocal,
+            root: roots
+                .home
+                .join(".commandcode")
+                .join("projects")
+                .join(project_slug(project))
+                .join("mcp.json"),
+            layout: Layout::ConfigFile,
+            format: Format::McpJson,
+            rank: 0,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("enabled: false".into()),
+        });
+    }
+
+    sources
+}
+
+pub fn project_slug(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let mut expanded = String::with_capacity(raw.len() + 8);
+    let mut previous_lower = false;
+    for character in raw.chars() {
+        if character.is_ascii_uppercase() && previous_lower {
+            expanded.push('-');
+        }
+        previous_lower = character.is_ascii_lowercase() || character.is_ascii_digit();
+        expanded.push(character);
+    }
+    let mut slug = String::new();
+    let mut pending_dash = false;
+    for character in expanded.to_lowercase().chars() {
+        if character.is_ascii_alphanumeric() {
+            if pending_dash && !slug.is_empty() {
+                slug.push('-');
+            }
+            pending_dash = false;
+            slug.push(character);
+        } else {
+            pending_dash = true;
+        }
+    }
+    slug
+}
+
 pub fn sources(roots: &Roots) -> Vec<Source> {
     let mut sources = Vec::new();
     sources.extend(claude_agent_sources(roots));
@@ -451,10 +637,21 @@ pub fn sources(roots: &Roots) -> Vec<Source> {
     sources.extend(codex_skill_sources(roots));
     sources.extend(opencode_skill_sources(roots));
     sources.extend(commandcode_skill_sources(roots));
+    sources.extend(mcp_sources(roots));
     sources
 }
 
-pub fn collect(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
+pub fn collect(
+    source: &Source,
+    project_root: Option<&Path>,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    if source.layout == Layout::ConfigFile {
+        if !source.root.is_file() {
+            return Vec::new();
+        }
+        return collect_config(source, project_root, warnings);
+    }
     if !source.root.is_dir() {
         return Vec::new();
     }
@@ -463,6 +660,273 @@ pub fn collect(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
         Layout::SkillDirs => collect_skill_dirs(source, warnings),
         Layout::ConfigFile => Vec::new(),
     }
+}
+
+fn collect_config(
+    source: &Source,
+    project_root: Option<&Path>,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let text = match fs::read_to_string(&source.root) {
+        Ok(text) => text,
+        Err(error) => {
+            warnings.push(format!(
+                "Could not read {}: {error}",
+                source.root.display()
+            ));
+            return Vec::new();
+        }
+    };
+    match source.format {
+        Format::McpJson => match crate::jsonc::parse(&text) {
+            Ok(value) => json_mcp_candidates(source, project_root, &value, warnings),
+            Err(error) => {
+                warnings.push(format!("{}: {error}", source.root.display()));
+                Vec::new()
+            }
+        },
+        Format::McpToml => toml_mcp_candidates(source, &text, warnings),
+        _ => Vec::new(),
+    }
+}
+
+fn string_list(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|text| text.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn normalize_path(text: &str) -> String {
+    let text = text.replace('\\', "/");
+    let text = text.strip_prefix("//?/").unwrap_or(&text);
+    text.trim_end_matches('/').to_lowercase()
+}
+
+fn find_project<'a>(
+    value: &'a serde_json::Value,
+    project_root: &Path,
+) -> Option<&'a serde_json::Value> {
+    let projects = value.get("projects")?.as_object()?;
+    let target = normalize_path(&project_root.to_string_lossy());
+    projects
+        .iter()
+        .find(|(key, _)| normalize_path(key) == target)
+        .map(|(_, entry)| entry)
+}
+
+fn json_command(object: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    match object.get("command") {
+        Some(serde_json::Value::String(text)) => parts.push(text.clone()),
+        Some(serde_json::Value::Array(items)) => {
+            parts.extend(items.iter().filter_map(|item| {
+                item.as_str().map(|text| text.to_string())
+            }));
+        }
+        _ => {}
+    }
+    if !matches!(object.get("command"), Some(serde_json::Value::Array(_))) {
+        if let Some(args) = object.get("args").and_then(|value| value.as_array()) {
+            parts.extend(
+                args.iter()
+                    .filter_map(|item| item.as_str().map(|text| text.to_string())),
+            );
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
+fn infer_transport(
+    declared: Option<&str>,
+    url: Option<&str>,
+    command: Option<&str>,
+) -> String {
+    match declared {
+        Some("local") => "stdio".into(),
+        Some("remote") => "http".into(),
+        Some(other) => other.to_string(),
+        None if url.is_some() => "http".into(),
+        None if command.is_some() => "stdio".into(),
+        None => "unknown".into(),
+    }
+}
+
+fn json_mcp_candidates(
+    source: &Source,
+    project_root: Option<&Path>,
+    value: &serde_json::Value,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    let mut disabled: Vec<String> = Vec::new();
+    let (map, prefix) = match source.ecosystem {
+        Ecosystem::Claude => {
+            if source.scope == Scope::ProjectLocal {
+                let Some(root) = project_root else {
+                    return candidates;
+                };
+                let Some(project) = find_project(value, root) else {
+                    return candidates;
+                };
+                disabled = string_list(project.get("disabledMcpServers"));
+                (
+                    project.get("mcpServers").and_then(|value| value.as_object()),
+                    format!("projects[{}].mcpServers", root.display()),
+                )
+            } else {
+                (
+                    value.get("mcpServers").and_then(|value| value.as_object()),
+                    "mcpServers".to_string(),
+                )
+            }
+        }
+        Ecosystem::Opencode => {
+            let mcp = value.get("mcp").and_then(|value| value.as_object());
+            match mcp {
+                Some(table) if table.get("servers").is_some() => (
+                    table.get("servers").and_then(|value| value.as_object()),
+                    "mcp.servers".to_string(),
+                ),
+                Some(table) => (Some(table), "mcp".to_string()),
+                None => (None, "mcp".to_string()),
+            }
+        }
+        _ => (
+            value.get("mcpServers").and_then(|value| value.as_object()),
+            "mcpServers".to_string(),
+        ),
+    };
+
+    let Some(map) = map else {
+        return candidates;
+    };
+    for (name, entry) in map {
+        let Some(object) = entry.as_object() else {
+            warnings.push(format!(
+                "{}: the MCP entry \"{name}\" is not an object and was skipped.",
+                source.root.display()
+            ));
+            continue;
+        };
+        let command = json_command(object);
+        let url = object
+            .get("url")
+            .and_then(|value| value.as_str())
+            .map(|text| text.to_string());
+        let declared = object
+            .get("type")
+            .or_else(|| object.get("transport"))
+            .and_then(|value| value.as_str());
+        let transport = infer_transport(declared, url.as_deref(), command.as_deref());
+        let enabled = !disabled.iter().any(|entry| entry == name)
+            && object.get("disabled").and_then(|value| value.as_bool()) != Some(true)
+            && object.get("enabled").and_then(|value| value.as_bool()) != Some(false);
+
+        let key_path = format!("{prefix}.{name}");
+        let mut candidate = build_candidate(
+            source,
+            name.clone(),
+            None,
+            Vec::new(),
+            &source.root,
+            Some(&key_path),
+        );
+        candidate.artifact.key_path = Some(key_path);
+        candidate.artifact.transport = Some(transport);
+        candidate.artifact.command = command;
+        candidate.artifact.url = url;
+        candidate.artifact.enabled = Some(enabled);
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn toml_mcp_candidates(
+    source: &Source,
+    text: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<Candidate> {
+    let document = match text.parse::<toml_edit::DocumentMut>() {
+        Ok(document) => document,
+        Err(error) => {
+            warnings.push(format!(
+                "{}: invalid TOML: {error}",
+                source.root.display()
+            ));
+            return Vec::new();
+        }
+    };
+    let Some(table) = document
+        .get("mcp_servers")
+        .and_then(|item| item.as_table_like())
+    else {
+        return Vec::new();
+    };
+
+    let mut candidates = Vec::new();
+    for (name, item) in table.iter() {
+        let Some(entry) = item.as_table_like() else {
+            warnings.push(format!(
+                "{}: the MCP entry \"{name}\" is not a table and was skipped.",
+                source.root.display()
+            ));
+            continue;
+        };
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(command) = entry.get("command").and_then(|item| item.as_str()) {
+            parts.push(command.to_string());
+        }
+        if let Some(args) = entry.get("args").and_then(|item| item.as_array()) {
+            parts.extend(
+                args.iter()
+                    .filter_map(|value| value.as_str().map(|text| text.to_string())),
+            );
+        }
+        let command = if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" "))
+        };
+        let url = entry
+            .get("url")
+            .and_then(|item| item.as_str())
+            .map(|text| text.to_string());
+        let declared = entry
+            .get("type")
+            .or_else(|| entry.get("transport"))
+            .and_then(|item| item.as_str());
+        let transport = infer_transport(declared, url.as_deref(), command.as_deref());
+        let enabled = entry
+            .get("enabled")
+            .and_then(|item| item.as_bool())
+            .unwrap_or(true);
+        let key_path = format!("mcp_servers.{name}");
+        let mut candidate = build_candidate(
+            source,
+            name.to_string(),
+            None,
+            Vec::new(),
+            &source.root,
+            Some(&key_path),
+        );
+        candidate.artifact.key_path = Some(key_path);
+        candidate.artifact.transport = Some(transport);
+        candidate.artifact.command = command;
+        candidate.artifact.url = url;
+        candidate.artifact.enabled = Some(enabled);
+        candidates.push(candidate);
+    }
+    candidates
 }
 
 fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
