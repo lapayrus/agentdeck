@@ -181,6 +181,8 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .topbar {
@@ -278,12 +280,15 @@ button {
 .workspace {
   display: grid;
   grid-template-columns: minmax(320px, 1.25fr) minmax(300px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .list {
   overflow-y: auto;
+  min-height: 0;
   border-right: 1px solid var(--border);
   padding: 10px;
 }
@@ -302,6 +307,7 @@ button {
 
 .detail {
   overflow-y: auto;
+  min-height: 0;
   padding: 20px;
   background: var(--surface);
 }
