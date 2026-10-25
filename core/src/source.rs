@@ -256,12 +256,201 @@ pub fn commandcode_agent_sources(roots: &Roots) -> Vec<Source> {
     sources
 }
 
+pub fn claude_skill_sources(roots: &Roots) -> Vec<Source> {
+    let mut sources = vec![Source {
+        ecosystem: Ecosystem::Claude,
+        artifact_type: ArtifactType::Skill,
+        scope: Scope::Global,
+        root: roots.home.join(".claude").join("skills"),
+        layout: Layout::SkillDirs,
+        format: Format::SkillMarkdown,
+        rank: 0,
+        reload: ReloadHint::Live,
+        disable_mechanism: Some("skillOverrides: {\"name\": \"off\"}".into()),
+    }];
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::Claude,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".claude").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 100 + rank,
+            reload: ReloadHint::Live,
+            disable_mechanism: Some("skillOverrides: {\"name\": \"off\"}".into()),
+        });
+    }
+    sources
+}
+
+pub fn codex_skill_sources(roots: &Roots) -> Vec<Source> {
+    let mut sources = vec![Source {
+        ecosystem: Ecosystem::Codex,
+        artifact_type: ArtifactType::Skill,
+        scope: Scope::Global,
+        root: roots.home.join(".agents").join("skills"),
+        layout: Layout::SkillDirs,
+        format: Format::SkillMarkdown,
+        rank: 100,
+        reload: ReloadHint::Restart,
+        disable_mechanism: Some("[[skills.config]] enabled = false".into()),
+    }];
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::Codex,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".agents").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank,
+            reload: ReloadHint::Restart,
+            disable_mechanism: Some("[[skills.config]] enabled = false".into()),
+        });
+    }
+    sources
+}
+
+pub fn opencode_skill_sources(roots: &Roots) -> Vec<Source> {
+    let global = roots.home.join(".config").join("opencode");
+    let mut sources = vec![
+        Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Global,
+            root: global.join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 20,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("permission: skill deny".into()),
+        },
+        Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Global,
+            root: roots.home.join(".agents").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 30,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("permission: skill deny".into()),
+        },
+        Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Global,
+            root: roots.home.join(".claude").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 40,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("permission: skill deny".into()),
+        },
+    ];
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".opencode").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: rank * 10,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("permission: skill deny".into()),
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::Opencode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".opencode").join("skill"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: rank * 10 + 1,
+            reload: ReloadHint::NextSession,
+            disable_mechanism: Some("permission: skill deny".into()),
+        });
+        for compat in [".agents", ".claude"] {
+            sources.push(Source {
+                ecosystem: Ecosystem::Opencode,
+                artifact_type: ArtifactType::Skill,
+                scope: Scope::Project,
+                root: directory.join(compat).join("skills"),
+                layout: Layout::SkillDirs,
+                format: Format::SkillMarkdown,
+                rank: rank * 10 + 10,
+                reload: ReloadHint::NextSession,
+                disable_mechanism: Some("permission: skill deny".into()),
+            });
+        }
+    }
+    sources
+}
+
+pub fn commandcode_skill_sources(roots: &Roots) -> Vec<Source> {
+    let mut sources = vec![
+        Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Global,
+            root: roots.home.join(".commandcode").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 20,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: Some("disabledSkills: [name]".into()),
+        },
+        Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Global,
+            root: roots.home.join(".agents").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: 30,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: Some("disabledSkills: [name]".into()),
+        },
+    ];
+    for (directory, rank) in project_layers(roots) {
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".commandcode").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: rank * 10,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: Some("disabledSkills: [name]".into()),
+        });
+        sources.push(Source {
+            ecosystem: Ecosystem::CommandCode,
+            artifact_type: ArtifactType::Skill,
+            scope: Scope::Project,
+            root: directory.join(".agents").join("skills"),
+            layout: Layout::SkillDirs,
+            format: Format::SkillMarkdown,
+            rank: rank * 10 + 10,
+            reload: ReloadHint::NextTurn,
+            disable_mechanism: Some("disabledSkills: [name]".into()),
+        });
+    }
+    sources
+}
+
 pub fn sources(roots: &Roots) -> Vec<Source> {
     let mut sources = Vec::new();
     sources.extend(claude_agent_sources(roots));
     sources.extend(codex_agent_sources(roots));
     sources.extend(opencode_agent_sources(roots));
     sources.extend(commandcode_agent_sources(roots));
+    sources.extend(claude_skill_sources(roots));
+    sources.extend(codex_skill_sources(roots));
+    sources.extend(opencode_skill_sources(roots));
+    sources.extend(commandcode_skill_sources(roots));
     sources
 }
 
@@ -271,7 +460,7 @@ pub fn collect(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
     }
     match source.layout {
         Layout::FilesRecursive => collect_files(source, warnings),
-        Layout::SkillDirs => Vec::new(),
+        Layout::SkillDirs => collect_skill_dirs(source, warnings),
         Layout::ConfigFile => Vec::new(),
     }
 }
@@ -313,6 +502,88 @@ fn collect_files(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> 
         }
     }
     candidates
+}
+
+fn collect_skill_dirs(source: &Source, warnings: &mut Vec<String>) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    let entries = match fs::read_dir(&source.root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warnings.push(format!(
+                "Could not read {}: {error}",
+                source.root.display()
+            ));
+            return candidates;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let folder = entry.file_name().to_string_lossy().to_string();
+        if folder.starts_with('.') || folder == "node_modules" {
+            continue;
+        }
+        let skill_file = path.join("SKILL.md");
+        if !skill_file.is_file() {
+            continue;
+        }
+        match read_skill(source, &path, &skill_file) {
+            Ok(candidate) => candidates.push(candidate),
+            Err(warning) => warnings.push(warning),
+        }
+    }
+    candidates
+}
+
+fn read_skill(source: &Source, directory: &Path, skill_file: &Path) -> Result<Candidate, String> {
+    let text = fs::read_to_string(skill_file)
+        .map_err(|error| format!("Could not read {}: {error}", skill_file.display()))?;
+    let fallback = directory
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+    let (require_name, description_rule, label) = match source.ecosystem {
+        Ecosystem::Claude => (false, DescriptionRule::Warn, "Claude Code"),
+        Ecosystem::Codex => (true, DescriptionRule::Required, "Codex"),
+        Ecosystem::Opencode => (false, DescriptionRule::Required, "OpenCode"),
+        Ecosystem::CommandCode => (true, DescriptionRule::Required, "Command Code"),
+    };
+    let meta = parse_markdown(&text, &fallback, require_name, description_rule, label)
+        .map_err(|error| format!("{}: {error}", skill_file.display()))?;
+    if let Some(reason) = &meta.skip_reason {
+        return Err(format!("{} was skipped: {reason}.", skill_file.display()));
+    }
+
+    let mut warnings = meta.warnings;
+    if source.ecosystem == Ecosystem::CommandCode {
+        let valid = meta.name.len() <= 64
+            && meta
+                .name
+                .chars()
+                .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+        if !valid {
+            warnings.push(
+                "Command Code requires a skill name of lowercase letters, digits and hyphens.".into(),
+            );
+        }
+    }
+    if let Some(description) = &meta.description {
+        if description.len() > 1024 {
+            warnings.push("The description is longer than 1024 characters.".into());
+        }
+    }
+
+    Ok(build_candidate(
+        source,
+        meta.name,
+        meta.description,
+        warnings,
+        skill_file,
+        None,
+    ))
 }
 
 const RESERVED_COMMAND_CODE_AGENTS: [&str; 4] = ["explore", "plan", "review", "general"];

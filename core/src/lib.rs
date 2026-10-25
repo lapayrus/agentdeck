@@ -487,4 +487,94 @@ mod tests {
         assert_eq!(shared_artifacts.len(), 1);
         assert_eq!(shared_artifacts[0].ecosystems.len(), 2);
     }
+
+    fn write_skill(directory: &Path, name: &str, description: Option<&str>) {
+        fs::create_dir_all(directory).unwrap();
+        let description = description
+            .map(|value| format!("description: {value}\n"))
+            .unwrap_or_default();
+        fs::write(
+            directory.join("SKILL.md"),
+            format!("---\nname: {name}\n{description}---\n\nInstructions.\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_skill_in_the_agents_root_appears_once_with_three_ecosystems() {
+        let home = tempdir().unwrap();
+        write_skill(
+            &home.path().join(".agents/skills/shared"),
+            "shared",
+            Some("Shared skill"),
+        );
+
+        let result = manager(home.path(), None).scan();
+        let shared: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.name == "shared")
+            .collect();
+
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared[0].ecosystems.len(), 3);
+        assert!(shared[0].ecosystems.contains(&Ecosystem::Codex));
+        assert!(shared[0].ecosystems.contains(&Ecosystem::Opencode));
+        assert!(shared[0].ecosystems.contains(&Ecosystem::CommandCode));
+        assert_eq!(shared[0].artifact_type, model::ArtifactType::Skill);
+    }
+
+    #[test]
+    fn claude_personal_skills_shadow_project_skills() {
+        let home = tempdir().unwrap();
+        let project = home.path().join("project");
+        write_skill(
+            &home.path().join(".claude/skills/reviewer"),
+            "reviewer",
+            Some("Personal reviewer"),
+        );
+        write_skill(
+            &project.join(".claude/skills/reviewer"),
+            "reviewer",
+            Some("Project reviewer"),
+        );
+
+        let result = manager(home.path(), Some(&project)).scan();
+        let reviewer: Vec<_> = result
+            .artifacts
+            .iter()
+            .filter(|artifact| {
+                artifact.name == "reviewer" && artifact.ecosystem == Ecosystem::Claude
+            })
+            .collect();
+
+        assert_eq!(reviewer.len(), 1);
+        assert_eq!(reviewer[0].scope, model::Scope::Global);
+        assert_eq!(
+            reviewer[0].description.as_deref(),
+            Some("Personal reviewer")
+        );
+        assert_eq!(reviewer[0].shadowed.len(), 1);
+        assert_eq!(reviewer[0].shadowed[0].scope, model::Scope::Project);
+    }
+
+    #[test]
+    fn codex_skills_without_a_description_are_skipped() {
+        let home = tempdir().unwrap();
+        write_skill(
+            &home.path().join(".agents/skills/silent"),
+            "silent",
+            None,
+        );
+
+        let result = manager(home.path(), None).scan();
+        assert!(result
+            .artifacts
+            .iter()
+            .all(|artifact| artifact.name != "silent"));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("missing description")));
+    }
 }
