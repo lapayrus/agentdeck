@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [master, "integration/**"]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Install frontend dependencies
+        run: npm ci --include=dev
+      - name: Frontend tests
+        run: npm test
+        env:
+          NODE_ENV: test
+      - name: Frontend build
+        run: npm run build
+      - name: Core tests
+        run: cargo test -p agentdeck-core
+      - name: Tauri type check
+        run: cargo check -p agentdeck
