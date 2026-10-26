@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b",
+    "types": "cargo test -p agentdeck-core export_bindings",
     "tauri": "tauri"
   },
   "dependencies": {

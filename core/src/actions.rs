@@ -6,6 +6,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
+use ts_rs::TS;
 
 use crate::hash::hash_text;
 use crate::jsonc_edit;
@@ -13,16 +14,18 @@ use crate::model::{Artifact, ArtifactType, Ecosystem, Scope, ScanResult};
 use crate::state::write_atomic;
 use crate::Manager;
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ActionKind {
     Disable,
     Enable,
     Remove,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct PlanFile {
     pub path: String,
     pub operation: String,
@@ -30,8 +33,9 @@ pub struct PlanFile {
     pub expected_hash: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ActionPlan {
     pub action: ActionKind,
     pub artifact_id: String,
@@ -42,15 +46,17 @@ pub struct ActionPlan {
     pub warnings: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ActionResult {
     pub plan: ActionPlan,
     pub scan: ScanResult,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct HistoryEntry {
     pub id: String,
     pub path: String,
@@ -62,8 +68,9 @@ pub struct HistoryEntry {
     pub hash: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct TrashEntry {
     pub id: String,
     pub artifact_id: String,
@@ -80,8 +87,9 @@ pub struct TrashEntry {
     pub after_hash: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct SnapshotDiff {
     pub path: String,
     pub snapshot: String,

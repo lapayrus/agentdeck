@@ -26,6 +26,16 @@ jobs:
         run: npm run build
       - name: Core tests
         run: cargo test -p agentdeck-core
+      - name: Regenerate TypeScript bindings
+        run: cargo test -p agentdeck-core export_bindings
+      - name: Check generated types are current
+        shell: pwsh
+        run: |
+          git diff --exit-code -- src/generated
+          if (git status --porcelain -- src/generated) {
+            Write-Error "src/generated is stale; run npm run types"
+            exit 1
+          }
       - name: Scan benchmark
         run: cargo test --release -p agentdeck-core --test performance -- --ignored --nocapture
       - name: Tauri type check

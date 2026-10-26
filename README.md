@@ -47,9 +47,25 @@ Two repository secrets are required:
 - `TAURI_SIGNING_PRIVATE_KEY` — the contents of the minisign private key
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password, if one was set
 
-The updater public key lives in `src-tauri/tauri.conf.json`. The private key must never be committed. Before publishing a release, replace `OWNER` in the updater endpoint with the GitHub owner and repository name.
+The updater public key lives in `src-tauri/tauri.conf.json`. The private key must never be committed. The endpoint targets `https://github.com/lapayrus/agentdeck/releases/latest/download/latest.json`, so releases must be published from that repository.
+
+To install the signing secret on a machine with the GitHub CLI:
+
+```powershell
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo lapayrus/agentdeck --body (Get-Content "$env:USERPROFILE\.agentdeck\updater.key" -Raw)
+```
 
 The app checks for updates at launch (throttled by the updater plugin) and on demand from Settings. The check is a signed request to GitHub Releases and is the only network call the app makes; it can be disabled.
+
+## Generated types
+
+The TypeScript view models are generated from the Rust core by `ts-rs`:
+
+```powershell
+npm run types
+```
+
+This writes `src/generated/`. CI regenerates them and fails if the committed files differ, so change the Rust type and rerun the command rather than editing `src/generated` or `src/types.ts`.
 
 ## License
 

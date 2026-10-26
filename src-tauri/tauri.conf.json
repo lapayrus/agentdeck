@@ -45,7 +45,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2NzcwNzAxQjUxOUQzRDQKUldUVTB4bTFBUWQzbGkxOC9wMEthalArTlJValgyWEplVWg3dFd4OVQ0eFUyWlN1NkZ6MHhvbXoK",
       "endpoints": [
-        "https://github.com/OWNER/AgentDeck/releases/latest/download/latest.json"
+        "https://github.com/lapayrus/agentdeck/releases/latest/download/latest.json"
       ]
     }
   }

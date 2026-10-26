@@ -123,6 +123,7 @@ describe("App shell", () => {
           path: "C:\\Users\\test\\.claude\\settings.json",
           operation: "update",
           description: "Add the Agent deny rule",
+          expectedHash: null,
         },
       ],
       warnings: [],

@@ -1,138 +1,21 @@
-export type Ecosystem = "claude" | "codex" | "opencode" | "commandcode";
-
-export type ArtifactType =
-  | "agent"
-  | "skill"
-  | "mcp"
-  | "hook"
-  | "command"
-  | "plugin"
-  | "memory"
-  | "settings";
-
-export type Scope = "global" | "project" | "projectLocal";
-
-export type ReloadHint =
-  | "live"
-  | "nextTurn"
-  | "nextSession"
-  | "restart"
-  | "unknown";
-
-export interface ShadowedArtifact {
-  name: string;
-  path: string;
-  scope: Scope;
-  ecosystem: Ecosystem;
-  reason: string;
-}
-
-export interface Artifact {
-  id: string;
-  name: string;
-  description: string | null;
-  ecosystem: Ecosystem;
-  artifactType: ArtifactType;
-  scope: Scope;
-  primaryPath: string;
-  sourcePaths: string[];
-  enabled: boolean | null;
-  ecosystems: Ecosystem[];
-  shadowed: ShadowedArtifact[];
-  warnings: string[];
-  managed: boolean;
-  canDisable: boolean;
-  canRemove: boolean;
-  disableMechanism: string | null;
-  transport: string | null;
-  command: string | null;
-  url: string | null;
-  keyPath: string | null;
-  reload: ReloadHint;
-}
-
-export interface EcosystemDetection {
-  ecosystem: Ecosystem;
-  detected: boolean;
-  version: string | null;
-  checkedPaths: string[];
-  capabilities: string[];
-  reason: string | null;
-}
-
-export interface ScanResult {
-  artifacts: Artifact[];
-  detections: EcosystemDetection[];
-  warnings: string[];
-  projectRoot: string | null;
-  isGitRepository: boolean;
-  scannedAt: string;
-}
-
-export interface ScanRequest {
-  projectRoot?: string | null;
-}
-
-export interface PlanFile {
-  path: string;
-  operation: "create" | "update" | "move" | "delete";
-  description: string;
-  expectedHash?: string | null;
-}
-
-export interface ActionPlan {
-  action: "disable" | "enable" | "remove" | "restore";
-  artifactId: string;
-  artifactName: string;
-  summary: string;
-  affectedEcosystems: Ecosystem[];
-  files: PlanFile[];
-  warnings: string[];
-}
-
-export interface ActionResult {
-  plan: ActionPlan;
-  scan: ScanResult;
-}
-
-export interface HistoryEntry {
-  id: string;
-  path: string;
-  action: string;
-  timestamp: string;
-  ecosystem: Ecosystem | null;
-  artifactName: string | null;
-  snapshotPath: string;
-  hash: string;
-}
-
-export interface TrashEntry {
-  id: string;
-  artifactId: string;
-  artifactName: string;
-  artifactType: ArtifactType;
-  ecosystem: Ecosystem;
-  scope: Scope;
-  originPath: string;
-  trashedPath: string;
-  timestamp: string;
-  kind: "file" | "quarantine" | "configKey";
-  restored: boolean;
-  snapshotPath: string | null;
-  afterHash: string | null;
-}
-
-export interface AppSettings {
-  theme: "light" | "dark" | "system";
-  checkForUpdates: boolean;
-  recentProjects: string[];
-  binaryOverrides: Partial<Record<Ecosystem, string>>;
-  window: { x: number | null; y: number | null; width: number; height: number };
-}
-
-export interface SnapshotDiff {
-  path: string;
-  snapshot: string;
-  current: string;
-  diff: string;
-}
+// Generated from the Rust core by ts-rs. Run `cargo test -p agentdeck-core export_bindings`
+// to refresh; CI fails when src/generated is stale.
+export type { ActionKind } from "./generated/ActionKind";
+export type { ActionPlan } from "./generated/ActionPlan";
+export type { ActionResult } from "./generated/ActionResult";
+export type { AppSettings } from "./generated/AppSettings";
+export type { Artifact } from "./generated/Artifact";
+export type { ArtifactType } from "./generated/ArtifactType";
+export type { Ecosystem } from "./generated/Ecosystem";
+export type { EcosystemDetection } from "./generated/EcosystemDetection";
+export type { HistoryEntry } from "./generated/HistoryEntry";
+export type { PlanFile } from "./generated/PlanFile";
+export type { ReloadHint } from "./generated/ReloadHint";
+export type { ScanRequest } from "./generated/ScanRequest";
+export type { ScanResult } from "./generated/ScanResult";
+export type { Scope } from "./generated/Scope";
+export type { ShadowedArtifact } from "./generated/ShadowedArtifact";
+export type { SnapshotDiff } from "./generated/SnapshotDiff";
+export type { Theme } from "./generated/Theme";
+export type { TrashEntry } from "./generated/TrashEntry";
+export type { WindowState } from "./generated/WindowState";

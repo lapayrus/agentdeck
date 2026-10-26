@@ -4,17 +4,20 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum Theme {
     Light,
     Dark,
     System,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WindowState {
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -33,8 +36,9 @@ impl Default for WindowState {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct AppSettings {
     pub theme: Theme,
     pub check_for_updates: bool,

@@ -151,7 +151,9 @@ export default function App({
 
   const refresh = async () => {
     try {
-      const result = await client.scan({ projectRoot: scan?.projectRoot ?? null });
+      const result = await client.scan({
+        projectRoot: scan?.projectRoot ?? undefined,
+      });
       setScan(result);
       setError(null);
     } catch (cause) {

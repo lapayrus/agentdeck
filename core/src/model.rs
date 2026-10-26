@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum Ecosystem {
     #[serde(rename = "claude")]
     Claude,
@@ -30,8 +33,9 @@ impl Ecosystem {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ArtifactType {
     Agent,
     Skill,
@@ -52,16 +56,18 @@ impl ArtifactType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum Scope {
     Global,
     Project,
     ProjectLocal,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ReloadHint {
     Live,
     NextTurn,
@@ -70,8 +76,9 @@ pub enum ReloadHint {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ShadowedArtifact {
     pub name: String,
     pub path: String,
@@ -80,8 +87,9 @@ pub struct ShadowedArtifact {
     pub reason: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct Artifact {
     pub id: String,
     pub name: String,
@@ -105,6 +113,7 @@ pub struct Artifact {
     pub key_path: Option<String>,
     pub reload: ReloadHint,
     #[serde(skip)]
+    #[ts(skip)]
     pub content_hash: Option<String>,
 }
 
@@ -174,8 +183,9 @@ fn type_key(artifact_type: ArtifactType) -> &'static str {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct EcosystemDetection {
     pub ecosystem: Ecosystem,
     pub detected: bool,
@@ -185,8 +195,9 @@ pub struct EcosystemDetection {
     pub reason: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ScanResult {
     pub artifacts: Vec<Artifact>,
     pub detections: Vec<EcosystemDetection>,
@@ -196,8 +207,10 @@ pub struct ScanResult {
     pub scanned_at: String,
 }
 
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Clone, Debug, Default, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ScanRequest {
+    #[ts(optional)]
     pub project_root: Option<String>,
 }
